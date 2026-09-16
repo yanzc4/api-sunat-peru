@@ -1,0 +1,18 @@
+# Dependencies
+/vendor/
+
+# Environment
+.env
+
+# Storage (certificados y comprobantes)
+/storage/private/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
