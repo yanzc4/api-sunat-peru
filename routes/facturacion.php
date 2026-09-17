@@ -6,10 +6,12 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 use App\Facturacion\Controllers\EmpresaController;
 use App\Facturacion\Controllers\FacturacionController;
+use App\Facturacion\Controllers\UsuarioController;
 use App\Facturacion\Config\Database;
 use App\Facturacion\Helpers\AuthGuard;
 use App\Facturacion\Helpers\ApiAuthPolicy;
 use App\Facturacion\Repositories\ApiTokenRepository;
+use App\Facturacion\Repositories\EmpresaFacturacionRepository;
 use App\Facturacion\Helpers\ResponseHelper;
 use App\Facturacion\Services\JwtService;
 
@@ -36,11 +38,24 @@ Flight::before('start', function() {
             ResponseHelper::unauthorized('Token empresarial requerido');
         }
 
-        $repo = new ApiTokenRepository(Database::getConnection());
+        $db = Database::getConnection();
+        $repo = new ApiTokenRepository($db);
         $apiToken = $repo->findByToken($token);
 
         if (!$apiToken) {
             ResponseHelper::unauthorized('Token empresarial inválido o inactivo');
+        }
+
+        $empresa = (new EmpresaFacturacionRepository($db))->findById($apiToken->empresaId);
+        if (!$empresa) {
+            ResponseHelper::unauthorized('Token empresarial inválido o inactivo');
+        }
+        if (!$empresa->activo) {
+            ResponseHelper::error(
+                'ACCOUNT_SUSPENDED',
+                'La cuenta de la empresa está suspendida. Contacta al administrador.',
+                403
+            );
         }
 
         Flight::set('auth_empresa_id', $apiToken->empresaId);
@@ -93,9 +108,23 @@ Flight::route('POST /api/facturacion/empresas/@id/logo', function (string $id) {
     $controller->subirLogo($id);
 });
 
+Flight::route('GET /api/facturacion/empresas/@id/series', function (string $id) {
+    $controller = new EmpresaController();
+    $controller->listarSeries($id);
+});
+
 Flight::route('POST /api/facturacion/empresas/@id/series', function (string $id) {
     $controller = new EmpresaController();
     $controller->crearSerie($id);
+});
+
+// =====================================================
+// Rutas internas de Usuarios (solo dashboard admin)
+// =====================================================
+
+Flight::route('POST /api/facturacion/usuarios', function () {
+    $controller = new UsuarioController();
+    $controller->crear();
 });
 
 // =====================================================
@@ -227,6 +256,12 @@ Flight::route('POST /dashboard', function () {
     }
     header('Location: /dashboard');
     exit;
+});
+
+Flight::route('GET /usuarios', function () {
+    AuthGuard::requireAdmin();
+    $usuario = AuthGuard::requireWebUser();
+    require dirname(__DIR__) . '/views/users/index.php';
 });
 
 // =====================================================

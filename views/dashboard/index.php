@@ -1,348 +1,167 @@
 <?php
-// El payload JWT (inyectado por la ruta /dashboard) es la fuente de la sesión
-$usuarioId = (int)($usuario['sub'] ?? 0);
-$rol = (string)($usuario['rol'] ?? '');
-$nombre = (string)($usuario['nombre'] ?? '');
+declare(strict_types=1);
+
+$usuarioId = (int) ($usuario['sub'] ?? 0);
+$rol = (string) ($usuario['rol'] ?? '');
+$nombre = (string) ($usuario['nombre'] ?? 'Usuario');
+$esAdmin = $rol === 'admin';
+$busqueda = trim((string) ($_GET['q'] ?? ''));
+$paginaSolicitada = max(1, (int) ($_GET['page'] ?? 1));
 
 $db = \App\Facturacion\Config\Database::getConnection();
 $empresaRepo = new \App\Facturacion\Repositories\EmpresaFacturacionRepository($db);
 $tokenRepo = new \App\Facturacion\Repositories\ApiTokenRepository($db);
+$usuarioRepo = new \App\Facturacion\Repositories\UsuarioRepository($db);
+$clientes = $esAdmin ? $usuarioRepo->findClientes() : [];
+$resultado = $empresaRepo->searchPaginated($esAdmin ? null : $usuarioId, $busqueda, $paginaSolicitada, 10);
+$empresas = $resultado['items'];
+$pagina = $resultado['page'];
+$totalPaginas = $resultado['total_pages'];
+$totalEmpresas = $resultado['total'];
+$desde = $totalEmpresas === 0 ? 0 : (($pagina - 1) * $resultado['per_page']) + 1;
+$hasta = min($pagina * $resultado['per_page'], $totalEmpresas);
 
-// Si es admin puede ver todas y crear. Si es cliente, solo ve las suyas.
-$empresas = ($rol === 'admin') 
-    ? $empresaRepo->findAll(false) 
-    : $empresaRepo->findByUsuarioId($usuarioId);
+$e = static fn (?string $value): string => htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+$pageUrl = static function (int $target) use ($busqueda): string {
+    $query = ['page' => $target];
+    if ($busqueda !== '') $query['q'] = $busqueda;
+    return '/dashboard?' . http_build_query($query);
+};
+$cssPath = dirname(__DIR__, 2) . '/public/assets/css/landing.css';
+$cssVersion = is_file($cssPath) ? (string) filemtime($cssPath) : '1';
 ?>
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - API SUNAT</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>Dashboard · API SUNAT</title>
+    <meta name="description" content="Panel de gestión de empresas, credenciales y series de facturación electrónica.">
+    <script>
+        (() => {
+            const saved = localStorage.getItem('landing-theme');
+            const dark = saved ? saved === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.classList.toggle('dark', dark);
+        })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/public/assets/css/landing.css?v=<?= $cssVersion ?>">
 </head>
-<body class="bg-light">
-
-<nav class="navbar navbar-dark bg-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="/dashboard">Panel de Control</a>
-    <div class="d-flex text-white align-items-center">
-      <span class="me-3">Hola, <?= htmlspecialchars($nombre) ?> (<?= strtoupper($rol) ?>)</span>
-      <a href="/logout" class="btn btn-sm btn-outline-light">Cerrar Sesión</a>
-    </div>
-  </div>
-</nav>
-
-<div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2>Mis Empresas</h2>
-        <?php if ($rol === 'admin'): ?>
-            <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#modalCrearEmpresa">+ Registrar Empresa</button>
-        <?php endif; ?>
-    </div>
-
-    <?php if (empty($empresas)): ?>
-        <div class="alert alert-warning">No tienes empresas registradas.</div>
-    <?php else: ?>
-        <div class="row">
-            <?php foreach ($empresas as $emp): 
-                $apiToken = $tokenRepo->findByEmpresa($emp->id);
-            ?>
-            <div class="col-md-6 mb-4">
-                <div class="card h-100 shadow-sm border-0">
-                    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0 text-truncate" style="max-width: 70%;" title="<?= htmlspecialchars($emp->razonSocial) ?>">
-                            <?= htmlspecialchars($emp->razonSocial) ?>
-                        </h5>
-                        <span class="badge bg-secondary">RUC: <?= $emp->ruc ?></span>
-                    </div>
-                    <div class="card-body">
-                        <div class="d-flex justify-content-between mb-3">
-                            <p class="mb-0"><strong>Entorno:</strong> <span class="badge bg-<?= $emp->entorno === 'produccion' ? 'success' : 'warning' ?>"><?= strtoupper($emp->entorno) ?></span></p>
-                            <?php if ($emp->certificadoPath): ?>
-                                <span class="badge bg-success text-white">Certificado OK</span>
-                            <?php else: ?>
-                                <span class="badge bg-danger text-white">Sin Certificado</span>
-                            <?php endif; ?>
-                        </div>
-                        
-                        <div class="mb-3 p-3 bg-light border rounded">
-                            <h6 class="text-muted">Token de Acceso API</h6>
-                            <?php if ($apiToken): ?>
-                                <code class="fs-6 d-block bg-white p-2 border"><?= htmlspecialchars($apiToken->token) ?></code>
-                            <?php else: ?>
-                                <p class="text-danger small mb-0">Sin token generado.</p>
-                                <?php if ($rol === 'admin'): ?>
-                                    <form method="POST" action="/dashboard">
-                                        <input type="hidden" name="action" value="crear_token">
-                                        <input type="hidden" name="empresa_id" value="<?= $emp->id ?>">
-                                        <button type="submit" class="btn btn-sm btn-primary mt-2">Generar Token</button>
-                                    </form>
-                                <?php endif; ?>
-                            <?php endif; ?>
-                        </div>
-
-                        <div class="btn-group w-100 mb-3" role="group">
-                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="abrirModalCert(<?= $emp->id ?>)">+ Certificado</button>
-                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="abrirModalLogo(<?= $emp->id ?>)">+ Logo</button>
-                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="abrirModalSerie(<?= $emp->id ?>)">+ Serie</button>
-                        </div>
-
-                        <?php if ($apiToken): ?>
-                            <a href="/doc#ejemplos" class="btn btn-sm btn-outline-info w-100">Ver Ejemplos de Integración</a>
-                        <?php endif; ?>
-                    </div>
-                </div>
+<body class="min-h-screen bg-[#f4f6f8] text-[#182230] antialiased transition-colors duration-300 dark:bg-[#0b0d10] dark:text-[#edf0f3]" style="font-family:'IBM Plex Sans',sans-serif">
+    <header class="border-b border-slate-200 bg-white dark:border-white/10 dark:bg-[#111419]">
+        <div class="mx-auto flex h-16 max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center gap-8">
+                <a href="/dashboard" class="flex items-center gap-3" aria-label="Ir al dashboard"><span class="grid h-9 w-9 place-items-center rounded-md bg-[#182230] text-xs font-bold text-signal dark:bg-signal dark:text-black">CM</span><span class="hidden sm:block"><strong class="block text-sm font-bold">Panel SUNAT</strong><small class="text-xs text-slate-500 dark:text-slate-400">Administración</small></span></a>
+                <nav class="hidden items-center gap-1 md:flex"><a href="/dashboard" class="admin-nav-link admin-nav-active">Empresas</a><?php if ($esAdmin): ?><a href="/usuarios" class="admin-nav-link">Usuarios</a><?php endif; ?><a href="/doc" class="admin-nav-link">Documentación</a></nav>
             </div>
-            <?php endforeach; ?>
+            <div class="flex items-center gap-2"><span class="hidden text-sm text-slate-500 sm:inline dark:text-slate-400"><?= $e($nombre) ?></span><button id="theme-toggle" type="button" class="admin-icon-button" aria-label="Cambiar tema"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.66 6.34l1.41-1.41"/></svg></button><a href="/logout" class="admin-icon-button" aria-label="Cerrar sesión"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 17l5-5-5-5M15 12H3M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/></svg></a></div>
         </div>
+        <nav class="flex border-t border-slate-100 px-4 md:hidden dark:border-white/5"><a href="/dashboard" class="admin-mobile-link border-b-2 border-[#9aac00] text-[#657500] dark:border-signal dark:text-signal">Empresas</a><?php if ($esAdmin): ?><a href="/usuarios" class="admin-mobile-link">Usuarios</a><?php endif; ?><a href="/doc" class="admin-mobile-link">Docs</a></nav>
+    </header>
+
+    <main class="mx-auto max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8">
+        <section class="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+            <div><p class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400"><?= $esAdmin ? 'Administración' : 'Mi cuenta' ?></p><h1 class="mt-1 text-2xl font-bold tracking-tight sm:text-3xl">Empresas</h1><p class="mt-2 text-sm text-slate-500 dark:text-slate-400">Gestiona credenciales, certificados, tokens y series de facturación.</p></div>
+            <?php if ($esAdmin): ?><button type="button" data-open-modal="modalCrearEmpresa" class="admin-primary-button"><span class="text-lg leading-none">+</span> Nueva empresa</button><?php endif; ?>
+        </section>
+
+        <section class="mt-7 grid gap-4 sm:grid-cols-3">
+            <article class="admin-stat"><span>Resultados</span><strong><?= $totalEmpresas ?></strong></article>
+            <article class="admin-stat"><span>Mostrando</span><strong><?= $desde ?>—<?= $hasta ?></strong></article>
+            <article class="admin-stat"><span>Página</span><strong><?= $pagina ?> <small class="text-sm font-normal text-slate-400">/ <?= $totalPaginas ?></small></strong></article>
+        </section>
+
+        <section class="mt-7">
+            <form method="GET" action="/dashboard" class="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 shadow-sm sm:flex-row dark:border-white/10 dark:bg-[#111419]" role="search">
+                <label class="relative flex-1"><span class="sr-only">Buscar por nombre comercial o RUC</span><svg class="pointer-events-none absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-ink/35 dark:text-white/35" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg><input name="q" value="<?= $e($busqueda) ?>" placeholder="Buscar por nombre comercial o RUC…" class="h-13 w-full border border-ink/15 bg-paper pl-12 pr-4 text-sm font-semibold outline-none transition placeholder:text-ink/35 focus:border-ink dark:border-white/15 dark:bg-black dark:placeholder:text-white/30 dark:focus:border-signal"></label>
+                <button class="admin-primary-button">Buscar</button>
+                <?php if ($busqueda !== ''): ?><a href="/dashboard" class="admin-secondary-button grid place-items-center">Limpiar</a><?php endif; ?>
+            </form>
+        </section>
+
+        <section class="mt-8" aria-live="polite">
+            <?php if (!$empresas): ?>
+                <div class="rounded-lg border border-dashed border-slate-300 bg-white px-6 py-16 text-center dark:border-white/15 dark:bg-[#111419]"><h2 class="text-xl font-semibold"><?= $busqueda !== '' ? 'Sin coincidencias' : 'Aún no hay empresas' ?></h2><p class="mx-auto mt-2 max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400"><?= $busqueda !== '' ? 'Prueba con otro nombre comercial o revisa el RUC ingresado.' : 'Cuando registres una empresa aparecerá aquí con sus accesos y configuraciones.' ?></p></div>
+            <?php else: ?>
+                <div class="grid gap-5 lg:grid-cols-2">
+                    <?php foreach ($empresas as $index => $emp): $apiToken = $tokenRepo->findByEmpresa($emp->id); $titulo = $emp->nombreComercial ?: $emp->razonSocial; ?>
+                        <article class="relative overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-[#111419]">
+                            <div class="flex items-start justify-between gap-4 border-b border-ink/10 p-5 sm:p-6 dark:border-white/10">
+                                <div class="min-w-0"><p class="mb-1 text-xs font-medium text-slate-400">Empresa #<?= $emp->id ?></p><h2 class="truncate text-lg font-semibold" title="<?= $e($titulo) ?>"><?= $e($titulo) ?></h2><?php if ($emp->nombreComercial): ?><p class="mt-1 truncate text-xs text-slate-500 dark:text-slate-400" title="<?= $e($emp->razonSocial) ?>"><?= $e($emp->razonSocial) ?></p><?php endif; ?></div>
+                                <span class="shrink-0 rounded-md border border-slate-200 px-3 py-2 font-mono text-[11px] font-semibold dark:border-white/10"><?= $e($emp->ruc) ?></span>
+                            </div>
+                            <div class="p-5 sm:p-6">
+                                <div class="flex flex-wrap gap-2">
+                                    <span class="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] <?= $emp->activo ? 'border-emerald-600/35 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'border-red-500/35 bg-red-500/10 text-red-700 dark:text-red-400' ?>"><span class="h-1.5 w-1.5 rounded-full bg-current"></span><?= $emp->activo ? 'Cuenta activa' : 'Cuenta suspendida' ?></span>
+                                    <span class="inline-flex items-center gap-2 border px-3 py-2 text-[10px] font-extrabold uppercase tracking-[0.14em] <?= $emp->entorno === 'produccion' ? 'border-emerald-600/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400' : 'border-amber-600/35 bg-amber-500/10 text-amber-700 dark:text-amber-300' ?>"><span class="h-1.5 w-1.5 rounded-full bg-current"></span><?= $e($emp->entorno) ?></span>
+                                    <span class="inline-flex items-center gap-2 border px-3 py-2 text-[10px] font-extrabold uppercase tracking-[0.14em] <?= $emp->certificadoPath ? 'border-emerald-600/40 text-emerald-700 dark:text-emerald-400' : 'border-red-500/35 text-red-600 dark:text-red-400' ?>"><?= $emp->certificadoPath ? '✓ Certificado activo' : '× Sin certificado' ?></span>
+                                </div>
+                                <?php if ($esAdmin): ?><div class="mt-4 flex items-center justify-between rounded-md border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-white/[0.025]"><div><p class="text-xs font-semibold">Estado de facturación</p><p class="mt-0.5 text-xs text-slate-500 dark:text-slate-400"><?= $emp->activo ? 'La empresa puede consumir la API.' : 'El token está bloqueado para todas las operaciones.' ?></p></div><button type="button" onclick="cambiarEstadoEmpresa(<?= $emp->id ?>, <?= $emp->activo ? 'false' : 'true' ?>, this)" class="ml-4 shrink-0 rounded-md border px-3 py-2 text-xs font-semibold transition <?= $emp->activo ? 'border-red-300 text-red-700 hover:bg-red-50 dark:border-red-500/40 dark:text-red-400 dark:hover:bg-red-500/10' : 'border-[#9aac00] text-[#657500] hover:bg-[#9aac00]/10 dark:border-signal dark:text-signal dark:hover:bg-signal/10' ?>"><?= $emp->activo ? 'Suspender' : 'Reactivar' ?></button></div><?php endif; ?>
+                                <div class="mt-5 border border-ink/12 bg-white/60 p-4 dark:border-white/10 dark:bg-white/[0.035]">
+                                    <div class="flex items-center justify-between gap-3"><p class="text-[10px] font-extrabold uppercase tracking-[0.18em] text-ink/45 dark:text-white/45">Token empresarial</p><?php if ($apiToken): ?><button type="button" class="copy-token text-[10px] font-extrabold uppercase tracking-[0.12em] text-[#657500] hover:underline dark:text-signal" data-token="<?= $e($apiToken->token) ?>">Copiar</button><?php endif; ?></div>
+                                    <?php if ($apiToken): ?><code class="mt-3 block overflow-hidden text-ellipsis whitespace-nowrap font-mono text-xs font-bold"><?= $e($apiToken->token) ?></code><?php else: ?><div class="mt-3 flex flex-wrap items-center justify-between gap-3"><p class="text-xs font-semibold text-red-600 dark:text-red-400">Esta empresa aún no tiene token activo.</p><?php if ($esAdmin): ?><form method="POST" action="/dashboard"><input type="hidden" name="action" value="crear_token"><input type="hidden" name="empresa_id" value="<?= $emp->id ?>"><button class="bg-ink px-3 py-2 text-[10px] font-extrabold uppercase tracking-[0.12em] text-white dark:bg-signal dark:text-black">Generar token</button></form><?php endif; ?></div><?php endif; ?>
+                                </div>
+                                <div class="mt-5 grid grid-cols-3 gap-2">
+                                    <button type="button" onclick="abrirModalCert(<?= $emp->id ?>)" class="card-action">Certificado</button>
+                                    <button type="button" onclick="abrirModalLogo(<?= $emp->id ?>)" class="card-action">Logo</button>
+                                    <button type="button" onclick='abrirModalSerie(<?= $emp->id ?>, <?= $e(json_encode($titulo, JSON_HEX_APOS)) ?>)' class="card-action card-action-primary">Series</button>
+                                </div>
+                            </div>
+                        </article>
+                    <?php endforeach; ?>
+                </div>
+            <?php endif; ?>
+        </section>
+
+        <?php if ($totalPaginas > 1): ?>
+            <nav class="mt-10 flex flex-col items-center justify-between gap-4 border-t border-ink/15 pt-6 sm:flex-row dark:border-white/15" aria-label="Paginación de empresas"><p class="text-xs font-bold text-ink/45 dark:text-white/45">Mostrando <?= $desde ?>–<?= $hasta ?> de <?= $totalEmpresas ?></p><div class="flex items-center gap-2"><?php if ($pagina > 1): ?><a href="<?= $e($pageUrl($pagina - 1)) ?>" class="page-nav">Anterior</a><?php endif; ?><?php for ($i = max(1, $pagina - 2); $i <= min($totalPaginas, $pagina + 2); $i++): ?><a href="<?= $e($pageUrl($i)) ?>" class="page-number <?= $i === $pagina ? 'page-current' : '' ?>" <?= $i === $pagina ? 'aria-current="page"' : '' ?>><?= $i ?></a><?php endfor; ?><?php if ($pagina < $totalPaginas): ?><a href="<?= $e($pageUrl($pagina + 1)) ?>" class="page-nav">Siguiente</a><?php endif; ?></div></nav>
+        <?php endif; ?>
+    </main>
+
+    <?php if ($esAdmin): ?>
+    <div id="modalCrearEmpresa" class="app-modal" role="dialog" aria-modal="true" aria-labelledby="titulo-crear-empresa"><div class="modal-panel max-w-3xl"><div class="modal-heading"><div><p class="modal-kicker">Nuevo registro</p><h2 id="titulo-crear-empresa" class="modal-title">Registrar empresa</h2><p class="mt-2 text-sm text-slate-500 dark:text-slate-400">Puedes vincularla a un cliente o administrarla desde tu cuenta.</p></div><button type="button" data-close-modal class="modal-close">×</button></div><form id="formCrearEmpresa" class="mt-7 grid gap-4 sm:grid-cols-2"><label class="sm:col-span-2"><span class="field-label">Usuario propietario (opcional)</span><select class="field-input" name="usuario_id"><option value="">Sin cliente · asignar a mi cuenta</option><?php foreach ($clientes as $cliente): ?><option value="<?= $cliente->id ?>"><?= $e($cliente->nombre) ?> · <?= $e($cliente->email) ?></option><?php endforeach; ?></select></label><label class="sm:col-span-2"><span class="field-label">Nombre comercial</span><input class="field-input" name="nombre_comercial" placeholder="Nombre visible en el panel"></label><label><span class="field-label">RUC</span><input class="field-input" name="ruc" inputmode="numeric" pattern="\d{11}" maxlength="11" required placeholder="20123456789"></label><label><span class="field-label">Razón social</span><input class="field-input" name="razon_social" required></label><label><span class="field-label">Usuario SOL</span><input class="field-input" name="sol_usuario" required></label><label><span class="field-label">Clave SOL</span><input class="field-input" type="password" name="sol_password" required></label><label class="sm:col-span-2"><span class="field-label">Dirección</span><input class="field-input" name="direccion"></label><label><span class="field-label">Departamento</span><input class="field-input" name="departamento" value="LIMA"></label><label><span class="field-label">Provincia</span><input class="field-input" name="provincia" value="LIMA"></label><label><span class="field-label">Distrito</span><input class="field-input" name="distrito" value="LIMA"></label><label><span class="field-label">Ubigeo</span><input class="field-input" name="ubigeo" value="150101"></label><label class="sm:col-span-2"><span class="field-label">Entorno SUNAT</span><select class="field-input" name="entorno"><option value="beta">Beta · Pruebas</option><option value="produccion">Producción</option></select></label></form><div id="resEmpresa" class="form-alert mt-4 hidden"></div><div class="modal-actions"><button type="button" data-close-modal class="admin-secondary-button">Cancelar</button><button type="button" onclick="crearEmpresa()" class="admin-primary-button">Guardar empresa</button></div></div></div>
     <?php endif; ?>
-</div>
 
-<?php if ($rol === 'admin'): ?>
-<!-- Modales de Administración -->
-<div class="modal fade" id="modalCrearEmpresa" tabindex="-1">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header bg-success text-white">
-        <h5 class="modal-title">Registrar Nueva Empresa</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <form id="formCrearEmpresa">
-            <div class="row">
-                <div class="col-md-4 mb-3">
-                    <label>RUC</label>
-                    <input type="text" name="ruc" class="form-control" required maxlength="11">
-                </div>
-                <div class="col-md-8 mb-3">
-                    <label>Razón Social</label>
-                    <input type="text" name="razon_social" class="form-control" required>
-                </div>
-                <div class="col-md-6 mb-3">
-                    <label>Usuario SOL</label>
-                    <input type="text" name="sol_usuario" class="form-control" required>
-                </div>
-                <div class="col-md-6 mb-3">
-                    <label>Clave SOL</label>
-                    <input type="password" name="sol_password" class="form-control" required>
-                </div>
-                <div class="col-md-12 mb-3">
-                    <label>Dirección</label>
-                    <input type="text" name="direccion" class="form-control" required>
-                </div>
-                <div class="col-md-4 mb-3">
-                    <label>Departamento</label>
-                    <input type="text" name="departamento" class="form-control" value="LIMA">
-                </div>
-                <div class="col-md-4 mb-3">
-                    <label>Provincia</label>
-                    <input type="text" name="provincia" class="form-control" value="LIMA">
-                </div>
-                <div class="col-md-4 mb-3">
-                    <label>Distrito</label>
-                    <input type="text" name="distrito" class="form-control" value="LIMA">
-                </div>
-                <div class="col-md-4 mb-3">
-                    <label>Ubigeo</label>
-                    <input type="text" name="ubigeo" class="form-control" value="150101">
-                </div>
-                <div class="col-md-4 mb-3">
-                    <label>Entorno</label>
-                    <select name="entorno" class="form-select">
-                        <option value="beta">BETA (Pruebas)</option>
-                        <option value="produccion">PRODUCCIÓN</option>
-                    </select>
-                </div>
-            </div>
-            <!-- Como eres el único creando, se te asignará a tu usuario_id -->
-        </form>
-        <div id="resEmpresa" class="alert d-none mt-2"></div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-success" onclick="crearEmpresa()">Guardar Empresa</button>
-      </div>
-    </div>
-  </div>
-</div>
-<?php endif; ?>
+    <div id="modalCertificado" class="app-modal" role="dialog" aria-modal="true"><div class="modal-panel max-w-lg"><div class="modal-heading"><div><p class="modal-kicker">Seguridad</p><h2 class="modal-title">Certificado digital</h2></div><button data-close-modal class="modal-close">×</button></div><input type="hidden" id="cert_empresa_id"><div class="mt-7 space-y-4"><label><span class="field-label">Archivo P12 o PFX</span><input type="file" class="field-input" id="cert_file" accept=".p12,.pfx" required></label><label><span class="field-label">Contraseña</span><input type="password" class="field-input" id="cert_pass" required></label></div><div id="resCert" class="form-alert mt-4 hidden"></div><div class="modal-actions"><button onclick="subirCert()" class="primary-action">Subir certificado</button></div></div></div>
+    <div id="modalLogo" class="app-modal" role="dialog" aria-modal="true"><div class="modal-panel max-w-lg"><div class="modal-heading"><div><p class="modal-kicker">Identidad</p><h2 class="modal-title">Logo de empresa</h2></div><button data-close-modal class="modal-close">×</button></div><input type="hidden" id="logo_empresa_id"><div class="mt-7"><label><span class="field-label">JPG, PNG o SVG</span><input type="file" class="field-input" id="logo_file" accept=".jpg,.jpeg,.png,.svg" required></label></div><div id="resLogo" class="form-alert mt-4 hidden"></div><div class="modal-actions"><button onclick="subirLogo()" class="primary-action">Subir logo</button></div></div></div>
 
-<!-- Modales Públicos para Admin y Clientes -->
-<div class="modal fade" id="modalCertificado" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Subir Certificado Digital (.p12 o .pfx)</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <form id="formCert">
-            <input type="hidden" id="cert_empresa_id">
-            <div class="mb-3">
-                <label>Archivo de Certificado</label>
-                <input type="file" class="form-control" id="cert_file" accept=".p12,.pfx" required>
-            </div>
-            <div class="mb-3">
-                <label>Contraseña del Certificado</label>
-                <input type="password" class="form-control" id="cert_pass" required>
-            </div>
-        </form>
-        <div id="resCert" class="alert d-none mt-2"></div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-primary" onclick="subirCert()">Subir</button>
-      </div>
-    </div>
-  </div>
-</div>
+    <div id="modalSerie" class="app-modal" role="dialog" aria-modal="true" aria-labelledby="titulo-series"><div class="modal-panel max-w-4xl"><div class="modal-heading"><div><p class="modal-kicker">Numeración</p><h2 id="titulo-series" class="modal-title">Series configuradas</h2><p id="serie_empresa_nombre" class="mt-2 text-xs font-semibold text-ink/45 dark:text-white/45"></p></div><button data-close-modal class="modal-close">×</button></div><input type="hidden" id="serie_empresa_id"><div class="mt-7 flex items-center justify-between gap-4 border-b border-ink/15 pb-4 dark:border-white/15"><p class="text-xs font-bold text-ink/50 dark:text-white/50">Cada serie conserva su correlativo actual.</p><button id="toggleSerieForm" type="button" class="primary-action shrink-0">+ Agregar serie</button></div><div id="serieFormPanel" class="mt-5 hidden border border-ink/15 bg-white/55 p-5 dark:border-white/10 dark:bg-white/[0.035]"><form id="formSerie" class="grid gap-4 sm:grid-cols-3"><label><span class="field-label">Comprobante</span><select class="field-input" id="serie_tipo"><option value="01">Factura (01)</option><option value="03">Boleta (03)</option><option value="07">Nota de crédito (07)</option><option value="08">Nota de débito (08)</option></select></label><label><span class="field-label">Serie</span><input type="text" class="field-input uppercase" id="serie_codigo" maxlength="4" placeholder="F001" required></label><label><span class="field-label">Correlativo inicial</span><input type="number" min="0" class="field-input" id="serie_corr" value="0" required></label></form><div id="resSerie" class="form-alert mt-4 hidden"></div><div class="mt-4 flex justify-end"><button onclick="crearSerie()" class="primary-action">Guardar serie</button></div></div><div id="seriesLoading" class="py-14 text-center text-xs font-extrabold uppercase tracking-[0.16em] text-ink/45 dark:text-white/45">Cargando series…</div><div id="seriesEmpty" class="hidden py-14 text-center"><p class="font-display text-xl font-extrabold">No hay series registradas</p><p class="mt-2 text-sm text-ink/50 dark:text-white/45">Usa “Agregar serie” para crear la primera.</p></div><div id="seriesTableWrap" class="mt-5 hidden overflow-x-auto"><table class="w-full min-w-[560px] border-collapse text-left"><thead><tr class="border-b border-ink/20 text-[10px] font-extrabold uppercase tracking-[0.16em] text-ink/45 dark:border-white/20 dark:text-white/45"><th class="px-3 py-4">Tipo</th><th class="px-3 py-4">Serie</th><th class="px-3 py-4 text-right">Correlativo actual</th><th class="px-3 py-4 text-right">Siguiente</th></tr></thead><tbody id="seriesTableBody"></tbody></table></div></div></div>
 
-<div class="modal fade" id="modalLogo" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Subir Logo de la Empresa</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <form id="formLogo">
-            <input type="hidden" id="logo_empresa_id">
-            <div class="mb-3">
-                <label>Archivo (JPG, PNG)</label>
-                <input type="file" class="form-control" id="logo_file" accept=".jpg,.png,.jpeg,.svg" required>
-            </div>
-        </form>
-        <div id="resLogo" class="alert d-none mt-2"></div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-primary" onclick="subirLogo()">Subir</button>
-      </div>
-    </div>
-  </div>
-</div>
+    <div id="toast" class="fixed bottom-5 left-1/2 z-[70] hidden -translate-x-1/2 bg-ink px-5 py-3 text-xs font-bold text-white shadow-xl dark:bg-signal dark:text-black" role="status"></div>
 
-<div class="modal fade" id="modalSerie" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Crear Serie (F001, B001)</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <form id="formSerie">
-            <input type="hidden" id="serie_empresa_id">
-            <div class="mb-3">
-                <label>Tipo Comprobante</label>
-                <select class="form-select" id="serie_tipo">
-                    <option value="01">Factura (01)</option>
-                    <option value="03">Boleta (03)</option>
-                    <option value="07">Nota Crédito (07)</option>
-                    <option value="08">Nota Débito (08)</option>
-                </select>
-            </div>
-            <div class="mb-3">
-                <label>Código de Serie (Ej: F001, B001)</label>
-                <input type="text" class="form-control" id="serie_codigo" required maxlength="4">
-            </div>
-            <div class="mb-3">
-                <label>Correlativo Inicial (Ej: 0)</label>
-                <input type="number" class="form-control" id="serie_corr" value="0" required>
-            </div>
-        </form>
-        <div id="resSerie" class="alert d-none mt-2"></div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-primary" onclick="crearSerie()">Crear Serie</button>
-      </div>
-    </div>
-  </div>
-</div>
+    <style>
+        .stat-label{font-size:.625rem;font-weight:800;text-transform:uppercase;letter-spacing:.2em;color:rgb(7 17 31 / .45)}.dark .stat-label{color:rgb(255 255 255 / .45)}
+        .card-action{border:1px solid rgb(7 17 31 / .15);padding:.75rem .5rem;font-size:.625rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;transition:.2s}.card-action:hover{border-color:#07111f;background:#07111f;color:#fff}.dark .card-action{border-color:rgb(255 255 255 / .15)}.dark .card-action:hover{border-color:#fff;background:#fff;color:#050505}.card-action-primary{border-color:#07111f;background:#07111f;color:#fff}.card-action-primary:hover{background:transparent;color:#07111f}.dark .card-action-primary{border-color:#eaff00;background:#eaff00;color:#050505}.dark .card-action-primary:hover{background:transparent;color:#eaff00}
+        .page-nav,.page-number{display:grid;height:2.5rem;place-items:center;border:1px solid rgb(7 17 31 / .15);font-size:.75rem;font-weight:800}.page-nav{padding:0 1rem;text-transform:uppercase;letter-spacing:.1em}.page-number{min-width:2.5rem}.page-nav:hover,.page-number:hover{border-color:#07111f}.page-current{border-color:#07111f;background:#07111f;color:#fff}.dark .page-nav,.dark .page-number{border-color:rgb(255 255 255 / .15)}.dark .page-nav:hover,.dark .page-number:hover{border-color:#fff}.dark .page-current{border-color:#eaff00;background:#eaff00;color:#050505}
+        .app-modal{position:fixed;inset:0;z-index:50;display:none;align-items:flex-end;justify-content:center;overflow:hidden;background:rgb(0 0 0 / .72);backdrop-filter:blur(5px)}.app-modal.flex{display:flex}.modal-panel{max-height:94vh;width:100%;overflow-y:auto;background:#f4f1e8;padding:1.25rem;box-shadow:0 25px 70px rgb(0 0 0 / .35)}.dark .modal-panel{background:#0b0b0b}.modal-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:1rem}.modal-actions{margin-top:1.75rem;display:flex;justify-content:flex-end;gap:.75rem}
+        .field-label{display:block;margin-bottom:.5rem;font-size:.625rem;font-weight:800;text-transform:uppercase;letter-spacing:.15em;color:rgb(7 17 31 / .5)}.dark .field-label{color:rgb(255 255 255 / .48)}.field-input{width:100%;border:1px solid rgb(7 17 31 / .16);background:rgb(255 255 255 / .55);padding:.85rem 1rem;font-size:.875rem;font-weight:600;outline:none;transition:.2s}.field-input:focus{border-color:#07111f;box-shadow:0 0 0 2px rgb(7 17 31 / .08)}.dark .field-input{border-color:rgb(255 255 255 / .15);background:#020202;color:#fff}.dark .field-input:focus{border-color:#eaff00;box-shadow:0 0 0 2px rgb(234 255 0 / .1)}
+        .modal-kicker{font-size:.625rem;font-weight:700;text-transform:uppercase;letter-spacing:.14em;color:#657500}.dark .modal-kicker{color:#eaff00}.modal-title{margin-top:.35rem;font-family:'IBM Plex Sans',sans-serif;font-size:1.5rem;font-weight:700;letter-spacing:-.02em}.modal-close{display:grid;height:2.5rem;width:2.5rem;place-items:center;border:1px solid rgb(7 17 31 / .15);border-radius:.375rem;font-size:1.25rem}.dark .modal-close{border-color:rgb(255 255 255 / .15)}
+        .primary-action{background:#07111f;padding:.8rem 1.1rem;font-size:.625rem;font-weight:800;text-transform:uppercase;letter-spacing:.11em;color:#fff;transition:.2s}.primary-action:hover{transform:translateY(-2px)}.dark .primary-action{background:#eaff00;color:#050505}.secondary-action{border:1px solid rgb(7 17 31 / .15);padding:.8rem 1.1rem;font-size:.625rem;font-weight:800;text-transform:uppercase;letter-spacing:.11em}.dark .secondary-action{border-color:rgb(255 255 255 / .15)}
+        .form-alert{border:1px solid;padding:.85rem 1rem;font-size:.75rem;font-weight:700}.form-alert[data-state="loading"]{border-color:rgb(7 17 31 / .2);color:rgb(7 17 31 / .65)}.form-alert[data-state="success"]{border-color:#5c7100;background:rgb(234 255 0 / .12);color:#465500}.form-alert[data-state="error"]{border-color:#dc4b40;background:rgb(220 75 64 / .08);color:#a72d25}.dark .form-alert[data-state="loading"]{border-color:rgb(255 255 255 / .2);color:rgb(255 255 255 / .65)}.dark .form-alert[data-state="success"]{border-color:#eaff00;color:#eaff00}.dark .form-alert[data-state="error"]{border-color:#ff756b;color:#ff9a92}
+        @media(min-width:640px){.app-modal{align-items:center;padding:1.25rem}.modal-panel{padding:2rem}}
+    </style>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-<script>
-    const certModal = new bootstrap.Modal(document.getElementById('modalCertificado'));
-    const logoModal = new bootstrap.Modal(document.getElementById('modalLogo'));
-    const serieModal = new bootstrap.Modal(document.getElementById('modalSerie'));
-
-    function abrirModalCert(id) { document.getElementById('cert_empresa_id').value = id; document.getElementById('resCert').className='d-none'; certModal.show(); }
-    function abrirModalLogo(id) { document.getElementById('logo_empresa_id').value = id; document.getElementById('resLogo').className='d-none'; logoModal.show(); }
-    function abrirModalSerie(id) { document.getElementById('serie_empresa_id').value = id; document.getElementById('resSerie').className='d-none'; serieModal.show(); }
-
-    async function crearEmpresa() {
-        const form = document.getElementById('formCrearEmpresa');
-        if(!form.checkValidity()){ form.reportValidity(); return; }
-        let data = Object.fromEntries(new FormData(form));
-        let resDiv = document.getElementById('resEmpresa');
-        
-        try {
-            resDiv.className = 'alert alert-info mt-2'; resDiv.innerText = 'Guardando...';
-            let req = await fetch('/api/facturacion/empresas', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(data)
-            });
-            let json = await req.json();
-            if(json.success) { location.reload(); } else { resDiv.className='alert alert-danger mt-2'; resDiv.innerText = json.error.message || 'Error al guardar'; }
-        } catch(e) { resDiv.className='alert alert-danger mt-2'; resDiv.innerText = 'Error de conexión'; }
-    }
-
-    async function subirCert() {
-        let id = document.getElementById('cert_empresa_id').value;
-        let pass = document.getElementById('cert_pass').value;
-        let file = document.getElementById('cert_file').files[0];
-        let resDiv = document.getElementById('resCert');
-        
-        if(!file || !pass) { alert("Completa los campos"); return; }
-        
-        let fd = new FormData();
-        fd.append('certificado', file);
-        fd.append('password', pass);
-
-        try {
-            resDiv.className = 'alert alert-info mt-2'; resDiv.innerText = 'Subiendo...';
-            let req = await fetch(`/api/facturacion/empresas/${id}/certificado`, { method: 'POST', body: fd });
-            let json = await req.json();
-            if(json.success) { location.reload(); } else { resDiv.className='alert alert-danger mt-2'; resDiv.innerText = json.error.message || 'Error al subir'; }
-        } catch(e) { resDiv.className='alert alert-danger mt-2'; resDiv.innerText = 'Error de conexión'; }
-    }
-
-    async function subirLogo() {
-        let id = document.getElementById('logo_empresa_id').value;
-        let file = document.getElementById('logo_file').files[0];
-        let resDiv = document.getElementById('resLogo');
-        
-        if(!file) { alert("Selecciona un logo"); return; }
-        
-        let fd = new FormData(); fd.append('logo', file);
-        try {
-            resDiv.className = 'alert alert-info mt-2'; resDiv.innerText = 'Subiendo...';
-            let req = await fetch(`/api/facturacion/empresas/${id}/logo`, { method: 'POST', body: fd });
-            let json = await req.json();
-            if(json.success) { location.reload(); } else { resDiv.className='alert alert-danger mt-2'; resDiv.innerText = json.error.message || 'Error al subir'; }
-        } catch(e) { resDiv.className='alert alert-danger mt-2'; resDiv.innerText = 'Error de conexión'; }
-    }
-
-    async function crearSerie() {
-        let id = document.getElementById('serie_empresa_id').value;
-        let tipo = document.getElementById('serie_tipo').value;
-        let serie = document.getElementById('serie_codigo').value;
-        let corr = document.getElementById('serie_corr').value;
-        let resDiv = document.getElementById('resSerie');
-        
-        if(!serie) { alert("Ingresa la serie"); return; }
-        
-        try {
-            resDiv.className = 'alert alert-info mt-2'; resDiv.innerText = 'Creando...';
-            let req = await fetch(`/api/facturacion/empresas/${id}/series`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ tipo_comprobante: tipo, serie: serie, correlativo_actual: parseInt(corr) })
-            });
-            let json = await req.json();
-            if(json.success) { location.reload(); } else { resDiv.className='alert alert-danger mt-2'; resDiv.innerText = json.error.message || 'Error'; }
-        } catch(e) { resDiv.className='alert alert-danger mt-2'; resDiv.innerText = 'Error de conexión'; }
-    }
-</script>
-
+    <script>
+        const tipoNombres = {'01':'Factura','03':'Boleta','07':'Nota de crédito','08':'Nota de débito'};
+        let toastTimer;
+        document.getElementById('theme-toggle').addEventListener('click',()=>{const dark=!document.documentElement.classList.contains('dark');document.documentElement.classList.toggle('dark',dark);localStorage.setItem('landing-theme',dark?'dark':'light');});
+        function openModal(id){const modal=document.getElementById(id);if(!modal)return;modal.classList.add('flex');document.body.style.overflow='hidden';setTimeout(()=>modal.querySelector('button,input,select')?.focus(),20)}
+        function closeModal(modal){modal.classList.remove('flex');if(!document.querySelector('.app-modal.flex'))document.body.style.overflow=''}
+        document.querySelectorAll('[data-open-modal]').forEach(button=>button.addEventListener('click',()=>openModal(button.dataset.openModal)));document.querySelectorAll('[data-close-modal]').forEach(button=>button.addEventListener('click',()=>closeModal(button.closest('.app-modal'))));document.querySelectorAll('.app-modal').forEach(modal=>modal.addEventListener('mousedown',event=>{if(event.target===modal)closeModal(modal)}));document.addEventListener('keydown',event=>{if(event.key==='Escape')document.querySelectorAll('.app-modal.flex').forEach(closeModal)});
+        function setAlert(id,state,message){const el=document.getElementById(id);el.dataset.state=state;el.textContent=message;el.classList.remove('hidden')}function hideAlert(id){const el=document.getElementById(id);el.classList.add('hidden');el.textContent=''}function showToast(message){const toast=document.getElementById('toast');toast.textContent=message;toast.classList.remove('hidden');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.add('hidden'),2200)}async function readJson(response){try{return await response.json()}catch(_){return{success:false,error:{message:'El servidor devolvió una respuesta no válida.'}}}}
+        document.querySelectorAll('.copy-token').forEach(button=>button.addEventListener('click',async()=>{try{await navigator.clipboard.writeText(button.dataset.token);button.textContent='Copiado';showToast('Token copiado');setTimeout(()=>button.textContent='Copiar',1600)}catch(_){showToast('No se pudo copiar el token')}}));
+        function abrirModalCert(id){document.getElementById('cert_empresa_id').value=id;document.getElementById('cert_file').value='';document.getElementById('cert_pass').value='';hideAlert('resCert');openModal('modalCertificado')}
+        function abrirModalLogo(id){document.getElementById('logo_empresa_id').value=id;document.getElementById('logo_file').value='';hideAlert('resLogo');openModal('modalLogo')}
+        async function abrirModalSerie(id,nombre){document.getElementById('serie_empresa_id').value=id;document.getElementById('serie_empresa_nombre').textContent=nombre;document.getElementById('serieFormPanel').classList.add('hidden');document.getElementById('toggleSerieForm').textContent='+ Agregar serie';hideAlert('resSerie');openModal('modalSerie');await cargarSeries()}
+        document.getElementById('toggleSerieForm').addEventListener('click',()=>{const panel=document.getElementById('serieFormPanel'),opening=panel.classList.contains('hidden');panel.classList.toggle('hidden');document.getElementById('toggleSerieForm').textContent=opening?'Cerrar formulario':'+ Agregar serie';if(opening)document.getElementById('serie_codigo').focus()});
+        async function cargarSeries(){const id=document.getElementById('serie_empresa_id').value,loading=document.getElementById('seriesLoading'),empty=document.getElementById('seriesEmpty'),wrap=document.getElementById('seriesTableWrap'),body=document.getElementById('seriesTableBody');loading.textContent='Cargando series…';loading.classList.remove('hidden');empty.classList.add('hidden');wrap.classList.add('hidden');body.replaceChildren();try{const response=await fetch(`/api/facturacion/empresas/${id}/series`,{headers:{Accept:'application/json'}}),json=await readJson(response);loading.classList.add('hidden');if(!response.ok||!json.success)throw new Error(json.error?.message||'No se pudieron cargar las series.');const series=Array.isArray(json.data)?json.data:[];if(!series.length){empty.classList.remove('hidden');return}series.forEach(item=>{const row=document.createElement('tr');row.className='border-b border-ink/10 dark:border-white/10';const tipo=document.createElement('td'),serie=document.createElement('td'),actual=document.createElement('td'),siguiente=document.createElement('td');tipo.className='px-3 py-4 text-sm font-semibold';tipo.textContent=`${tipoNombres[item.tipo_comprobante]||'Comprobante'} (${item.tipo_comprobante})`;serie.className='px-3 py-4 font-mono text-sm font-extrabold';serie.textContent=item.serie;actual.className='px-3 py-4 text-right font-mono text-sm';actual.textContent=Number(item.correlativo).toLocaleString('es-PE');siguiente.className='px-3 py-4 text-right font-mono text-sm font-extrabold text-[#657500] dark:text-signal';siguiente.textContent=(Number(item.correlativo)+1).toLocaleString('es-PE');row.append(tipo,serie,actual,siguiente);body.append(row)});wrap.classList.remove('hidden')}catch(error){loading.textContent=error.message;loading.classList.remove('hidden')}}
+        async function crearEmpresa(){const form=document.getElementById('formCrearEmpresa');if(!form.checkValidity()){form.reportValidity();return}setAlert('resEmpresa','loading','Guardando empresa…');try{const response=await fetch('/api/facturacion/empresas',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(form)))}),json=await readJson(response);if(!response.ok||!json.success)throw new Error(json.error?.message||'No se pudo guardar.');location.reload()}catch(error){setAlert('resEmpresa','error',error.message)}}
+        async function cambiarEstadoEmpresa(id,activo,button){const accion=activo?'reactivar':'suspender';const mensaje=activo?'¿Reactivar esta empresa y permitir nuevamente el uso de la API?':'¿Suspender esta empresa? Su token dejará de funcionar inmediatamente en todos los endpoints de comprobantes.';if(!window.confirm(mensaje))return;const original=button.textContent;button.disabled=true;button.textContent=activo?'Reactivando…':'Suspendiendo…';try{const response=await fetch(`/api/facturacion/empresas/${id}`,{method:'PUT',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({activo})}),json=await readJson(response);if(!response.ok||!json.success)throw new Error(json.error?.message||`No se pudo ${accion} la empresa.`);location.reload()}catch(error){button.disabled=false;button.textContent=original;showToast(error.message)}}
+        async function subirCert(){const id=document.getElementById('cert_empresa_id').value,pass=document.getElementById('cert_pass').value,file=document.getElementById('cert_file').files[0];if(!file||!pass){setAlert('resCert','error','Selecciona el certificado e ingresa su contraseña.');return}const data=new FormData();data.append('certificado',file);data.append('password',pass);setAlert('resCert','loading','Subiendo certificado…');try{const response=await fetch(`/api/facturacion/empresas/${id}/certificado`,{method:'POST',body:data,headers:{Accept:'application/json'}}),json=await readJson(response);if(!response.ok||!json.success)throw new Error(json.error?.message||'No se pudo subir.');location.reload()}catch(error){setAlert('resCert','error',error.message)}}
+        async function subirLogo(){const id=document.getElementById('logo_empresa_id').value,file=document.getElementById('logo_file').files[0];if(!file){setAlert('resLogo','error','Selecciona un archivo de logo.');return}const data=new FormData();data.append('logo',file);setAlert('resLogo','loading','Subiendo logo…');try{const response=await fetch(`/api/facturacion/empresas/${id}/logo`,{method:'POST',body:data,headers:{Accept:'application/json'}}),json=await readJson(response);if(!response.ok||!json.success)throw new Error(json.error?.message||'No se pudo subir.');location.reload()}catch(error){setAlert('resLogo','error',error.message)}}
+        async function crearSerie(){const form=document.getElementById('formSerie');if(!form.checkValidity()){form.reportValidity();return}const id=document.getElementById('serie_empresa_id').value,serie=document.getElementById('serie_codigo').value.trim().toUpperCase(),correlativo=parseInt(document.getElementById('serie_corr').value,10)||0;setAlert('resSerie','loading','Guardando serie…');try{const response=await fetch(`/api/facturacion/empresas/${id}/series`,{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({tipo_comprobante:document.getElementById('serie_tipo').value,serie,correlativo})}),json=await readJson(response);if(!response.ok||!json.success)throw new Error(json.error?.message||'No se pudo crear la serie.');setAlert('resSerie','success','Serie creada correctamente.');form.reset();document.getElementById('serie_corr').value='0';await cargarSeries()}catch(error){setAlert('resSerie','error',error.message)}}
+    </script>
 </body>
 </html>

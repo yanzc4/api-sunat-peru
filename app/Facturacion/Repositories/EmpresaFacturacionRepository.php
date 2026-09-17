@@ -77,6 +77,64 @@ class EmpresaFacturacionRepository
         );
     }
 
+    /**
+     * Devuelve empresas paginadas para el dashboard. Cuando se recibe un
+     * usuario, el ámbito queda limitado a las empresas que le pertenecen.
+     *
+     * @return array{items: array<int, EmpresaFacturacion>, total: int, page: int, per_page: int, total_pages: int}
+     */
+    public function searchPaginated(?int $usuarioId, string $search, int $page, int $perPage = 10): array
+    {
+        $page = max(1, $page);
+        $perPage = max(1, min(100, $perPage));
+        $search = trim($search);
+        $conditions = [];
+        $params = [];
+
+        if ($usuarioId !== null) {
+            $conditions[] = 'usuario_id = :usuario_id';
+            $params[':usuario_id'] = $usuarioId;
+        }
+
+        if ($search !== '') {
+            // MySQL con prepares nativos no permite reutilizar el mismo
+            // marcador nombrado más de una vez dentro de una sentencia.
+            $conditions[] = '(nombre_comercial LIKE :search_nombre OR ruc LIKE :search_ruc)';
+            $params[':search_nombre'] = '%' . $search . '%';
+            $params[':search_ruc'] = '%' . $search . '%';
+        }
+
+        $where = $conditions ? ' WHERE ' . implode(' AND ', $conditions) : '';
+        $count = $this->pdo->prepare('SELECT COUNT(*) FROM empresas_facturacion' . $where);
+        $count->execute($params);
+        $total = (int) $count->fetchColumn();
+        $totalPages = max(1, (int) ceil($total / $perPage));
+        $page = min($page, $totalPages);
+        $offset = ($page - 1) * $perPage;
+
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM empresas_facturacion' . $where .
+            ' ORDER BY COALESCE(NULLIF(nombre_comercial, \'\'), razon_social) ASC, id ASC LIMIT :limit OFFSET :offset'
+        );
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value, $key === ':usuario_id' ? PDO::PARAM_INT : PDO::PARAM_STR);
+        }
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return [
+            'items' => array_map(
+                fn(array $row) => EmpresaFacturacion::fromArray($row),
+                $stmt->fetchAll(PDO::FETCH_ASSOC)
+            ),
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+            'total_pages' => $totalPages,
+        ];
+    }
+
     public function create(EmpresaFacturacion $empresa): int
     {
         $this->validarRuc($empresa->ruc);

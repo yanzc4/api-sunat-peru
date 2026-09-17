@@ -11,6 +11,7 @@ El destino SUNAT se obtiene siempre de `empresas_facturacion.entorno`: `beta` ut
 - GET: agregar `?token=TU_TOKEN` a la URL.
 - POST: agregar `"token": "TU_TOKEN"` al JSON.
 - Token ausente, inválido o inactivo: HTTP 401 `UNAUTHORIZED`.
+- Empresa suspendida: HTTP 403 `ACCOUNT_SUSPENDED`. Ningún endpoint de comprobantes estará disponible hasta que el administrador reactive la cuenta.
 - ID inexistente o perteneciente a otra empresa: HTTP 404 `NOT_FOUND`.
 
 ## Flujo de emisión
@@ -155,6 +156,7 @@ Descarga `application/zip` con la constancia de recepción.
 |---:|---|---|
 | 400 | `VALIDATION_ERROR` | JSON, datos o estado inválidos |
 | 401 | `UNAUTHORIZED` | Token ausente, inválido o inactivo |
+| 403 | `ACCOUNT_SUSPENDED` | La empresa está suspendida y no puede usar la API de comprobantes |
 | 404 | `NOT_FOUND` | Comprobante ajeno/inexistente o archivo no disponible |
 | 422 | `SUNAT_ERROR` | Error o rechazo SUNAT |
 | 500 | `INTERNAL_ERROR` | Error interno sin información técnica |

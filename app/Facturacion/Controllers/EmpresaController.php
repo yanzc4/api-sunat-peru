@@ -12,6 +12,7 @@ use App\Facturacion\Helpers\EmpresaAccessPolicy;
 use App\Facturacion\Helpers\ResponseHelper;
 use App\Facturacion\Models\EmpresaFacturacion;
 use App\Facturacion\Repositories\EmpresaFacturacionRepository;
+use App\Facturacion\Repositories\UsuarioRepository;
 use App\Facturacion\Services\CertificadoService;
 use App\Facturacion\Services\EncryptionService;
 use App\Facturacion\Services\SvgSanitizer;
@@ -113,8 +114,18 @@ class EmpresaController
                 );
             }
 
+            $propietarioId = AuthContext::userId();
+            if (!empty($data['usuario_id'])) {
+                $usuarioRepo = new UsuarioRepository(Database::getConnection());
+                $propietario = $usuarioRepo->findById((int) $data['usuario_id']);
+                if (!$propietario || $propietario->rol !== 'cliente') {
+                    ResponseHelper::validationError('Selecciona un usuario cliente válido para la empresa.');
+                }
+                $propietarioId = $propietario->id;
+            }
+
             $empresa = new EmpresaFacturacion();
-            $empresa->usuarioId = AuthContext::userId(); // Asignar al usuario actual (JWT)
+            $empresa->usuarioId = $propietarioId;
             $empresa->ruc = $data['ruc'];
             $empresa->razonSocial = $data['razon_social'];
             $empresa->nombreComercial = $data['nombre_comercial'] ?? null;
@@ -218,8 +229,9 @@ class EmpresaController
                 $campos['logo_path'] = $data['logo_path'];
             }
 
-            if (isset($data['activo'])) {
-                $campos['activo'] = $data['activo'] ? 1 : 0;
+            if (array_key_exists('activo', $data)) {
+                $this->requireAdmin();
+                $campos['activo'] = filter_var($data['activo'], FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
             }
 
             if (empty($campos)) {
@@ -394,7 +406,7 @@ class EmpresaController
                 );
             }
 
-            $correlativoInicial = isset($data['correlativo']) ? (int) $data['correlativo'] : 0;
+            $correlativoInicial = isset($data['correlativo']) ? max(0, (int) $data['correlativo']) : 0;
 
             $serieId = $comprobanteRepo->crearSerie(
                 $empresa->id,
@@ -416,6 +428,26 @@ class EmpresaController
             ResponseHelper::validationError($e->getMessage());
         } catch (\Throwable $e) {
             ResponseHelper::internalException($e, 'Error al crear serie');
+        }
+    }
+
+    public function listarSeries(string $id): void
+    {
+        try {
+            $empresa = $this->repo->findById((int) $id);
+
+            if (!$empresa) {
+                ResponseHelper::notFound('Empresa no encontrada');
+            }
+            $this->checkOwner($empresa);
+
+            $comprobanteRepo = new \App\Facturacion\Repositories\ComprobanteRepository(
+                \App\Facturacion\Config\Database::getConnection()
+            );
+
+            ResponseHelper::success($comprobanteRepo->findSeriesByEmpresa($empresa->id));
+        } catch (\Throwable $e) {
+            ResponseHelper::internalException($e, 'Error al listar series');
         }
     }
 

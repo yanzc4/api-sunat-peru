@@ -180,6 +180,19 @@ class ComprobanteRepository
         return (int) $stmt->fetchColumn() > 0;
     }
 
+    public function findSeriesByEmpresa(int $empresaId): array
+    {
+        $stmt = $this->pdo->prepare("
+            SELECT id, empresa_id, tipo_comprobante, serie, correlativo
+            FROM comprobante_series
+            WHERE empresa_id = :empresa_id
+            ORDER BY tipo_comprobante ASC, serie ASC
+        ");
+        $stmt->execute([':empresa_id' => $empresaId]);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     public function create(Comprobante $comprobante): int
     {
         $stmt = $this->pdo->prepare("

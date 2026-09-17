@@ -19,6 +19,10 @@ final class ApiAuthPolicy
             return self::JWT;
         }
 
+        if (self::matchesPrefix($path, '/api/facturacion/usuarios')) {
+            return self::JWT;
+        }
+
         return null;
     }
 
