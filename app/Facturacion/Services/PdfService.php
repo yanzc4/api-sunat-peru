@@ -219,7 +219,7 @@ class PdfService
 
         $logoData = '';
         if (!empty($empresa->logoPath)) {
-            $absPath = dirname(__DIR__, 4) . '/' . ltrim($empresa->logoPath, '/\\');
+            $absPath = $this->config->resolveProjectPath($empresa->logoPath);
             if (file_exists($absPath)) {
                 $logoData = file_get_contents($absPath);
             }
@@ -331,7 +331,7 @@ class PdfService
 
         $logoHtml = '';
         if (!empty($empresa->logoPath)) {
-            $absPath = dirname(__DIR__, 4) . '/' . ltrim($empresa->logoPath, '/\\');
+            $absPath = $this->config->resolveProjectPath($empresa->logoPath);
             if (file_exists($absPath)) {
                 $type = pathinfo($absPath, PATHINFO_EXTENSION);
                 $type = ($type === 'svg') ? 'svg+xml' : $type;

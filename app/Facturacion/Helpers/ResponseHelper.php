@@ -82,6 +82,20 @@ class ResponseHelper
         self::error('INTERNAL_ERROR', $message, 500);
     }
 
+    public static function internalException(\Throwable $exception, string $context = 'Error interno'): void
+    {
+        error_log(sprintf(
+            '[%s] %s: %s in %s:%d',
+            date('c'),
+            $context,
+            $exception->getMessage(),
+            $exception->getFile(),
+            $exception->getLine()
+        ));
+
+        self::internalError('Error interno del servidor');
+    }
+
     public static function sunatError(string $message, ?string $codigo = null): void
     {
         $details = $codigo !== null ? ['sunat_code' => $codigo] : null;

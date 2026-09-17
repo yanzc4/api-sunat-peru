@@ -14,7 +14,6 @@ use Greenter\Model\Response\StatusCdrResult;
 use Greenter\Ws\Builder\ServiceBuilder;
 use Greenter\Ws\Services\BillSender;
 use Greenter\Ws\Services\ConsultCdrService;
-use Greenter\Ws\Services\SunatEndpoints;
 use Greenter\Ws\Services\SoapClient;
 use PDO;
 
@@ -73,7 +72,8 @@ class SunatService
             throw $e;
 
         } catch (\SoapFault $e) {
-            $mensaje = "Error SOAP: " . ($e->getMessage() ?: 'Conexión fallida');
+            error_log('Error SOAP enviando a SUNAT: ' . $e->getMessage());
+            $mensaje = 'No se pudo establecer comunicación con SUNAT';
             $this->comprobanteRepo->updateEstado(
                 $comprobante->id,
                 'error',
@@ -83,7 +83,8 @@ class SunatService
             throw new SunatException($mensaje);
 
         } catch (\Exception $e) {
-            $mensaje = "Error inesperado: " . $e->getMessage();
+            error_log('Error inesperado enviando a SUNAT: ' . $e->getMessage());
+            $mensaje = 'No se pudo completar el envío a SUNAT';
             $this->comprobanteRepo->updateEstado(
                 $comprobante->id,
                 'error',
@@ -116,14 +117,48 @@ class SunatService
         } catch (SunatException $e) {
             throw $e;
         } catch (\SoapFault $e) {
-            throw new SunatException(
-                "Error SOAP consultando estado: " . $e->getMessage()
-            );
+            error_log('Error SOAP consultando estado SUNAT: ' . $e->getMessage());
+            throw new SunatException('No se pudo consultar el estado en SUNAT');
         } catch (\Exception $e) {
-            throw new SunatException(
-                "Error consultando estado: " . $e->getMessage()
-            );
+            error_log('Error inesperado consultando estado SUNAT: ' . $e->getMessage());
+            throw new SunatException('No se pudo consultar el estado en SUNAT');
         }
+    }
+
+    /**
+     * En beta SUNAT permite enviar comprobantes, pero no publica un
+     * billConsultService beta equivalente. En ese entorno el estado fiable es
+     * el que quedó registrado al procesar la respuesta y su CDR.
+     */
+    public function consultarEstadoComprobante(
+        EmpresaFacturacion $empresa,
+        Comprobante $comprobante
+    ): array {
+        if (SunatEnvironment::isBeta($empresa->entorno)) {
+            return [
+                'success' => $comprobante->estado === 'aceptado',
+                'source' => 'local_cdr',
+                'entorno' => 'beta',
+                'estado' => $comprobante->estado,
+                'code' => $comprobante->codigoRespuesta,
+                'message' => $comprobante->mensajeRespuesta,
+                'cdr_disponible' => !empty($comprobante->cdrPath),
+            ];
+        }
+
+        $result = $this->consultarEstado(
+            $empresa,
+            $empresa->ruc,
+            $comprobante->tipoComprobante,
+            $comprobante->serie,
+            $comprobante->correlativo
+        );
+
+        return [
+            'source' => 'sunat_remote',
+            'entorno' => SunatEnvironment::PRODUCCION,
+            ...$result,
+        ];
     }
 
     public function consultarCdr(
@@ -162,23 +197,22 @@ class SunatService
         } catch (SunatException $e) {
             throw $e;
         } catch (\SoapFault $e) {
-            throw new SunatException(
-                "Error SOAP consultando CDR: " . $e->getMessage()
-            );
+            error_log('Error SOAP consultando CDR: ' . $e->getMessage());
+            throw new SunatException('No se pudo consultar el CDR en SUNAT');
         } catch (\Exception $e) {
-            throw new SunatException(
-                "Error consultando CDR: " . $e->getMessage()
-            );
+            error_log('Error inesperado consultando CDR: ' . $e->getMessage());
+            throw new SunatException('No se pudo consultar el CDR en SUNAT');
         }
     }
 
     private function createBillSender(EmpresaFacturacion $empresa): BillSender
     {
         $solPassword = $this->encryption->decrypt($empresa->solPassword);
-        $endpoint = $this->getEndpoint($empresa->entorno);
+        $endpoint = SunatEnvironment::sendEndpoint($empresa->entorno);
+        $soapUsername = SunatCredentials::soapUsername($empresa->ruc, $empresa->solUsuario);
 
         $soapClient = new SoapClient();
-        $soapClient->setCredentials($empresa->solUsuario, $solPassword);
+        $soapClient->setCredentials($soapUsername, $solPassword);
         $soapClient->setService($endpoint);
 
         $builder = new ServiceBuilder();
@@ -190,23 +224,17 @@ class SunatService
     private function createConsultService(EmpresaFacturacion $empresa): ConsultCdrService
     {
         $solPassword = $this->encryption->decrypt($empresa->solPassword);
-        $endpoint = SunatEndpoints::FE_CONSULTA_CDR;
+        $endpoint = SunatEnvironment::consultEndpoint($empresa->entorno);
+        $soapUsername = SunatCredentials::soapUsername($empresa->ruc, $empresa->solUsuario);
 
         $soapClient = new SoapClient();
-        $soapClient->setCredentials($empresa->solUsuario, $solPassword);
+        $soapClient->setCredentials($soapUsername, $solPassword);
         $soapClient->setService($endpoint);
 
         $builder = new ServiceBuilder();
         $builder->setClient($soapClient);
 
         return $builder->build(ConsultCdrService::class);
-    }
-
-    private function getEndpoint(string $entorno): string
-    {
-        return $entorno === 'produccion'
-            ? SunatEndpoints::FE_PRODUCCION
-            : SunatEndpoints::FE_BETA;
     }
 
     private function processResult(
@@ -274,6 +302,15 @@ class SunatService
 
     private function processStatusResult(StatusCdrResult $result): array
     {
+        $error = $result->getError();
+        if ($error !== null) {
+            throw new SunatException(
+                'SUNAT rechazó la consulta de estado: ' . $error->getMessage(),
+                (string) $error->getCode(),
+                $error->getMessage()
+            );
+        }
+
         $data = [
             'success' => $result->isSuccess(),
             'code' => $result->getCode(),
@@ -286,12 +323,6 @@ class SunatService
             $data['cdr_description'] = $cdrResponse->getDescription();
             $data['cdr_notes'] = $cdrResponse->getNotes();
             $data['cdr_accepted'] = $cdrResponse->isAccepted();
-        }
-
-        $error = $result->getError();
-        if ($error !== null) {
-            $data['error_code'] = $error->getCode();
-            $data['error_message'] = $error->getMessage();
         }
 
         return $data;

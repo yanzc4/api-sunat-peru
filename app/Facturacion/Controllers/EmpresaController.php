@@ -7,11 +7,15 @@ namespace App\Facturacion\Controllers;
 use App\Facturacion\Config\Database;
 use App\Facturacion\Config\FacturacionConfig;
 use App\Facturacion\Exceptions\FacturacionException;
+use App\Facturacion\Helpers\AuthContext;
+use App\Facturacion\Helpers\EmpresaAccessPolicy;
 use App\Facturacion\Helpers\ResponseHelper;
 use App\Facturacion\Models\EmpresaFacturacion;
 use App\Facturacion\Repositories\EmpresaFacturacionRepository;
 use App\Facturacion\Services\CertificadoService;
 use App\Facturacion\Services\EncryptionService;
+use App\Facturacion\Services\SvgSanitizer;
+use App\Facturacion\Services\SunatEnvironment;
 use PDO;
 
 class EmpresaController
@@ -19,6 +23,7 @@ class EmpresaController
     private EmpresaFacturacionRepository $repo;
     private EncryptionService $encryption;
     private CertificadoService $certificadoService;
+    private SvgSanitizer $svgSanitizer;
 
     public function __construct()
     {
@@ -26,29 +31,48 @@ class EmpresaController
         $this->repo = new EmpresaFacturacionRepository($pdo);
         $this->encryption = new EncryptionService();
         $this->certificadoService = new CertificadoService();
+        $this->svgSanitizer = new SvgSanitizer();
     }
 
     private function checkOwner(EmpresaFacturacion $empresa): void
     {
-        if (!isset($_SESSION['usuario_id'])) return; // Es API, ya filtró token
-        if (isset($_SESSION['rol']) && $_SESSION['rol'] === 'admin') return;
-        if ($empresa->usuarioId !== $_SESSION['usuario_id']) {
-            ResponseHelper::validationError('No tienes permisos sobre esta empresa.');
-            exit;
+        if (AuthContext::userId() === null) {
+            ResponseHelper::unauthorized('Sesión de dashboard requerida');
+        }
+        if (!EmpresaAccessPolicy::canManage(
+            AuthContext::rol(),
+            AuthContext::userId(),
+            $empresa->usuarioId
+        )) {
+            ResponseHelper::forbidden('No tienes permisos sobre esta empresa.');
+        }
+    }
+
+    private function requireAdmin(): void
+    {
+        if (!EmpresaAccessPolicy::canCreateOrDelete(AuthContext::rol())) {
+            ResponseHelper::forbidden('Solo el administrador puede realizar esta acción.');
         }
     }
 
     public function listar(): void
     {
         try {
-            $empresas = $this->repo->findAll();
+            $usuarioId = AuthContext::userId();
+            if ($usuarioId === null) {
+                ResponseHelper::unauthorized('Sesión de dashboard requerida');
+            }
+
+            $empresas = AuthContext::isAdmin()
+                ? $this->repo->findAll(false)
+                : $this->repo->findByUsuarioId($usuarioId);
             $data = array_map(
                 fn(EmpresaFacturacion $e) => $e->toArray(),
                 $empresas
             );
             ResponseHelper::success($data);
-        } catch (\Exception $e) {
-            ResponseHelper::internalError('Error al listar empresas: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            ResponseHelper::internalException($e, 'Error al listar empresas');
         }
     }
 
@@ -63,14 +87,15 @@ class EmpresaController
             $this->checkOwner($empresa);
 
             ResponseHelper::success($empresa->toArray());
-        } catch (\Exception $e) {
-            ResponseHelper::internalError('Error al obtener empresa: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            ResponseHelper::internalException($e, 'Error al obtener empresa');
         }
     }
 
     public function crear(): void
     {
         try {
+            $this->requireAdmin();
             $data = $this->getJsonInput();
 
             $this->validateRequired($data, [
@@ -89,7 +114,7 @@ class EmpresaController
             }
 
             $empresa = new EmpresaFacturacion();
-            $empresa->usuarioId = $_SESSION['usuario_id'] ?? null; // Asignar al usuario actual
+            $empresa->usuarioId = AuthContext::userId(); // Asignar al usuario actual (JWT)
             $empresa->ruc = $data['ruc'];
             $empresa->razonSocial = $data['razon_social'];
             $empresa->nombreComercial = $data['nombre_comercial'] ?? null;
@@ -105,7 +130,8 @@ class EmpresaController
             $certPass = $data['certificado_password'] ?? '';
             $empresa->certificadoPassword = $certPass ? $this->encryption->encrypt($certPass) : '';
             
-            $empresa->entorno = $data['entorno'] ?? 'beta';
+            $empresa->entorno = SunatEnvironment::normalize($data['entorno'] ?? 'beta');
+            SunatEnvironment::assertSupported($empresa->entorno);
             $empresa->activo = true;
 
             $id = $this->repo->create($empresa);
@@ -115,8 +141,8 @@ class EmpresaController
 
         } catch (FacturacionException $e) {
             ResponseHelper::validationError($e->getMessage());
-        } catch (\Exception $e) {
-            ResponseHelper::internalError('Error al crear empresa: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            ResponseHelper::internalException($e, 'Error al crear empresa');
         }
     }
 
@@ -184,7 +210,8 @@ class EmpresaController
             }
 
             if (isset($data['entorno'])) {
-                $campos['entorno'] = $data['entorno'];
+                $campos['entorno'] = SunatEnvironment::normalize((string) $data['entorno']);
+                SunatEnvironment::assertSupported($campos['entorno']);
             }
 
             if (isset($data['logo_path'])) {
@@ -206,14 +233,15 @@ class EmpresaController
 
         } catch (FacturacionException $e) {
             ResponseHelper::validationError($e->getMessage());
-        } catch (\Exception $e) {
-            ResponseHelper::internalError('Error al actualizar empresa: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            ResponseHelper::internalException($e, 'Error al actualizar empresa');
         }
     }
 
     public function eliminar(string $id): void
     {
         try {
+            $this->requireAdmin();
             $empresa = $this->repo->findById((int) $id);
 
             if (!$empresa) {
@@ -225,8 +253,8 @@ class EmpresaController
 
             ResponseHelper::success(['message' => 'Empresa eliminada correctamente']);
 
-        } catch (\Exception $e) {
-            ResponseHelper::internalError('Error al eliminar empresa: ' . $e->getMessage());
+        } catch (\Throwable $e) {
+            ResponseHelper::internalException($e, 'Error al eliminar empresa');
         }
     }
 
@@ -276,7 +304,7 @@ class EmpresaController
         } catch (FacturacionException $e) {
             ResponseHelper::validationError($e->getMessage());
         } catch (\Throwable $e) {
-            ResponseHelper::internalError('Error al subir certificado: ' . $e->getMessage());
+            ResponseHelper::internalException($e, 'Error al subir certificado');
         }
     }
 
@@ -306,7 +334,7 @@ class EmpresaController
                 ResponseHelper::validationError('El logo debe ser de tipo JPG, PNG o SVG');
             }
 
-            $basePath = dirname(__DIR__, 4);
+            $basePath = FacturacionConfig::getInstance()->getProjectRoot();
             $relDir = 'storage/public/empresas/' . $empresa->ruc;
             $absDir = $basePath . '/' . $relDir;
 
@@ -317,8 +345,13 @@ class EmpresaController
             $pathRelativo = $relDir . '/logo.' . $extension;
             $absPath = $absDir . '/logo.' . $extension;
 
-            if (!move_uploaded_file($file['tmp_name'], $absPath)) {
-                ResponseHelper::internalError('No se pudo guardar el archivo de logo');
+            if ($extension === 'svg') {
+                $sanitized = $this->svgSanitizer->sanitizeFile($file['tmp_name']);
+                if (file_put_contents($absPath, $sanitized, LOCK_EX) === false) {
+                    throw new \RuntimeException('No se pudo guardar el SVG saneado');
+                }
+            } elseif (!move_uploaded_file($file['tmp_name'], $absPath)) {
+                throw new \RuntimeException('No se pudo guardar el archivo de logo');
             }
 
             $this->repo->update((int) $id, [
@@ -333,7 +366,7 @@ class EmpresaController
         } catch (FacturacionException $e) {
             ResponseHelper::validationError($e->getMessage());
         } catch (\Throwable $e) {
-            ResponseHelper::internalError('Error al subir logo: ' . $e->getMessage());
+            ResponseHelper::internalException($e, 'Error al subir logo');
         }
     }
 
@@ -382,7 +415,7 @@ class EmpresaController
         } catch (FacturacionException $e) {
             ResponseHelper::validationError($e->getMessage());
         } catch (\Throwable $e) {
-            ResponseHelper::internalError('Error al crear serie: ' . $e->getMessage());
+            ResponseHelper::internalException($e, 'Error al crear serie');
         }
     }
 

@@ -10,6 +10,7 @@ declare(strict_types=1);
  */
 
 require_once __DIR__ . '/../../vendor/autoload.php';
+require_once __DIR__ . '/../support/TestProcess.php';
 
 use App\Facturacion\Config\FacturacionConfig;
 use App\Facturacion\Models\EmpresaFacturacion;
@@ -135,16 +136,22 @@ test('Certificados están en directorio privado', function () {
 
 // Test 4: ResponseHelper no expone stack traces
 test('ResponseHelper error no incluye stack trace', function () {
-    ob_start();
-    try {
-        App\Facturacion\Helpers\ResponseHelper::error('TEST', 'Error message', 400);
-    } catch (\Exception $e) {
-    }
-    $output = ob_get_clean();
+    $result = TestProcess::response('custom');
+    $output = $result['output'];
 
     assertNotContains($output, 'Exception', 'No exponer Excepciones');
     assertNotContains($output, 'Stack trace', 'No exponer stack trace');
     assertNotContains($output, '/vendor/', 'No exponer paths de vendor');
+});
+
+test('Error interno oculta detalles técnicos', function () {
+    $result = TestProcess::response('internal');
+    $output = $result['output'];
+
+    assertNotContains($output, 'super-secret', 'No exponer secretos');
+    assertNotContains($output, 'PDO', 'No exponer detalles de base de datos');
+    assertNotContains($output, '/vendor/', 'No exponer rutas internas');
+    assertEquals(true, str_contains($output, 'Error interno del servidor'));
 });
 
 echo "\n=== Results: {$passed} passed, {$failed} failed ===\n";

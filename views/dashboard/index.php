@@ -1,7 +1,8 @@
 <?php
-$usuarioId = $_SESSION['usuario_id'];
-$rol = $_SESSION['rol'];
-$nombre = $_SESSION['nombre'];
+// El payload JWT (inyectado por la ruta /dashboard) es la fuente de la sesión
+$usuarioId = (int)($usuario['sub'] ?? 0);
+$rol = (string)($usuario['rol'] ?? '');
+$nombre = (string)($usuario['nombre'] ?? '');
 
 $db = \App\Facturacion\Config\Database::getConnection();
 $empresaRepo = new \App\Facturacion\Repositories\EmpresaFacturacionRepository($db);

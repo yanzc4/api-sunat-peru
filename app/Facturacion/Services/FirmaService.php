@@ -30,9 +30,8 @@ class FirmaService
         try {
             $xmlFirmado = $signedXml->signXml($xml);
         } catch (\Exception $e) {
-            throw new FacturacionException(
-                "Error al firmar XML: " . $e->getMessage()
-            );
+            error_log('Error interno al firmar XML: ' . $e->getMessage());
+            throw new FacturacionException('No se pudo firmar el XML');
         }
 
         if (empty($xmlFirmado)) {
@@ -60,9 +59,7 @@ class FirmaService
         $resolvedPath = $this->resolverRuta($empresa->certificadoPath);
 
         if (!file_exists($resolvedPath)) {
-            throw new CertificadoException(
-                "El certificado no existe: {$resolvedPath}"
-            );
+            throw new CertificadoException('El certificado configurado no existe');
         }
 
         $extension = strtolower(pathinfo(

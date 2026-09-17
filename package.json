@@ -1,0 +1,12 @@
+{
+  "name": "api-sunat-peru-frontend",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i ./resources/css/landing.css -o ./public/assets/css/landing.css --minify",
+    "watch:css": "tailwindcss -i ./resources/css/landing.css -o ./public/assets/css/landing.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.13",
+    "tailwindcss": "^4.1.13"
+  }
+}

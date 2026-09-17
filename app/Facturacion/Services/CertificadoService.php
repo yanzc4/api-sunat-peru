@@ -76,9 +76,7 @@ class CertificadoService
         $resolvedPath = $this->resolverRuta($path);
 
         if (!file_exists($resolvedPath)) {
-            throw new CertificadoException(
-                "El certificado no existe en la ruta: {$resolvedPath}"
-            );
+            throw new CertificadoException('El certificado configurado no existe');
         }
     }
 
@@ -117,8 +115,7 @@ class CertificadoService
 
         if (strpos($pathNormalizado, $directorioNormalizado) !== 0) {
             throw new CertificadoException(
-                "El certificado no pertenece a la empresa con RUC: {$ruc}. " .
-                "Esperado: {$directorioNormalizado} | Recibido: {$pathNormalizado}"
+                "El certificado no pertenece a la empresa con RUC: {$ruc}"
             );
         }
     }

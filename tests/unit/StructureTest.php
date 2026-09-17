@@ -63,6 +63,8 @@ test('composer.lock existe', fn() => assertFileExists("{$root}/composer.lock"));
 // Archivos principales
 test('FacturacionConfig.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Config/FacturacionConfig.php"));
 test('ResponseHelper.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Helpers/ResponseHelper.php"));
+test('ApiAuthPolicy.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Helpers/ApiAuthPolicy.php"));
+test('EmpresaAccessPolicy.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Helpers/EmpresaAccessPolicy.php"));
 
 // Services
 test('FacturacionService.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Services/FacturacionService.php"));
@@ -72,6 +74,9 @@ test('SunatService.php existe', fn() => assertFileExists("{$root}/app/Facturacio
 test('PdfService.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Services/PdfService.php"));
 test('EncryptionService.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Services/EncryptionService.php"));
 test('CertificadoService.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Services/CertificadoService.php"));
+test('SvgSanitizer.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Services/SvgSanitizer.php"));
+test('SunatEnvironment.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Services/SunatEnvironment.php"));
+test('SunatCredentials.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Services/SunatCredentials.php"));
 
 // Models
 test('EmpresaFacturacion.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Models/EmpresaFacturacion.php"));
@@ -91,6 +96,7 @@ test('routes/facturacion.php existe', fn() => assertFileExists("{$root}/routes/f
 
 // SQL
 test('sql/facturacion_schema.sql existe', fn() => assertFileExists("{$root}/sql/facturacion_schema.sql"));
+test('Migración consolidada SaaS existe', fn() => assertFileExists("{$root}/sql/20260916_consolidar_saas.sql"));
 
 // Features
 test('features/00-setup-proyecto.md existe', fn() => assertFileExists("{$root}/features/00-setup-proyecto.md"));

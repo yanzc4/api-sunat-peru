@@ -36,6 +36,27 @@ class ComprobanteRepository
         return $comprobante;
     }
 
+    public function findByIdAndEmpresa(int $id, int $empresaId): ?Comprobante
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT * FROM comprobantes WHERE id = :id AND empresa_id = :empresa_id"
+        );
+        $stmt->execute([
+            ':id' => $id,
+            ':empresa_id' => $empresaId,
+        ]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$row) {
+            return null;
+        }
+
+        $comprobante = Comprobante::fromArray($row);
+        $comprobante->detalles = $this->findDetalles($id);
+
+        return $comprobante;
+    }
+
     public function findDetalles(int $comprobanteId): array
     {
         $stmt = $this->pdo->prepare(

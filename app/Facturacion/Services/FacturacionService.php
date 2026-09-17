@@ -68,9 +68,9 @@ class FacturacionService
         return $comprobante;
     }
 
-    public function procesar(int $comprobanteId): Comprobante
+    public function procesar(int $comprobanteId, int $empresaId): Comprobante
     {
-        $comprobante = $this->comprobanteRepo->findById($comprobanteId);
+        $comprobante = $this->comprobanteRepo->findByIdAndEmpresa($comprobanteId, $empresaId);
 
         if (!$comprobante) {
             throw new FacturacionException(
@@ -197,7 +197,12 @@ class FacturacionService
             error_log("Error generando PDF: " . $e->getMessage());
         }
 
-        return $this->comprobanteRepo->findById($comprobanteId);
+        $actualizado = $this->comprobanteRepo->findByIdAndEmpresa($comprobanteId, $empresaId);
+        if ($actualizado === null) {
+            throw new \RuntimeException('El comprobante procesado ya no está disponible');
+        }
+
+        return $actualizado;
     }
 
     private function validarEmpresa(int $empresaId): EmpresaFacturacion
@@ -215,6 +220,8 @@ class FacturacionService
                 "La empresa de facturación no está activa"
             );
         }
+
+        SunatEnvironment::assertSupported($empresa->entorno);
 
         return $empresa;
     }
@@ -278,9 +285,9 @@ class FacturacionService
         }
     }
 
-    public function obtenerComprobante(int $id): ?Comprobante
+    public function obtenerComprobante(int $id, int $empresaId): ?Comprobante
     {
-        return $this->comprobanteRepo->findById($id);
+        return $this->comprobanteRepo->findByIdAndEmpresa($id, $empresaId);
     }
 
     public function listarComprobantes(array $filtros = []): array

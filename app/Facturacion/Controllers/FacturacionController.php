@@ -9,6 +9,7 @@ use App\Facturacion\DTO\ComprobanteDTO;
 use App\Facturacion\Exceptions\FacturacionException;
 use App\Facturacion\Exceptions\SunatException;
 use App\Facturacion\Helpers\ResponseHelper;
+use App\Facturacion\Helpers\ApiAuthPolicy;
 use App\Facturacion\Models\Comprobante;
 use App\Facturacion\Repositories\ComprobanteRepository;
 use App\Facturacion\Services\FacturacionService;
@@ -32,14 +33,7 @@ class FacturacionController
     public function listar(): void
     {
         try {
-            $filtros = [];
-
-            $authEmpresaId = \Flight::get('auth_empresa_id');
-            if ($authEmpresaId) {
-                $filtros['empresa_id'] = $authEmpresaId;
-            } elseif (isset($_GET['empresa_id'])) {
-                $filtros['empresa_id'] = (int) $_GET['empresa_id'];
-            }
+            $filtros = ['empresa_id' => $this->authenticatedEmpresaId()];
 
             if (isset($_GET['estado'])) {
                 $filtros['estado'] = $_GET['estado'];
@@ -57,14 +51,17 @@ class FacturacionController
 
             ResponseHelper::success($data);
         } catch (\Throwable $e) {
-            ResponseHelper::internalError('Error al listar comprobantes: ' . $e->getMessage());
+            ResponseHelper::internalException($e, 'Error al listar comprobantes');
         }
     }
 
     public function ver(string $id): void
     {
         try {
-            $comprobante = $this->facturacionService->obtenerComprobante((int) $id);
+            $comprobante = $this->facturacionService->obtenerComprobante(
+                (int) $id,
+                $this->authenticatedEmpresaId()
+            );
 
             if (!$comprobante) {
                 ResponseHelper::notFound('Comprobante no encontrado');
@@ -77,7 +74,7 @@ class FacturacionController
 
             ResponseHelper::success($data);
         } catch (\Throwable $e) {
-            ResponseHelper::internalError('Error al obtener comprobante: ' . $e->getMessage());
+            ResponseHelper::internalException($e, 'Error al obtener comprobante');
         }
     }
 
@@ -89,6 +86,7 @@ class FacturacionController
             $dto->validate();
 
             $comprobante = $this->facturacionService->emitir($dto);
+            $empresa = $this->facturacionService->obtenerEmpresa($dto->empresaId);
 
             $response = [
                 'id' => $comprobante->id,
@@ -102,6 +100,7 @@ class FacturacionController
                 ),
                 'numero' => $comprobante->getNumeroFormato(),
                 'estado' => $comprobante->estado,
+                'entorno' => $empresa?->entorno,
                 'message' => 'Comprobante creado. Usar POST /procesar para enviar a SUNAT.',
             ];
 
@@ -110,33 +109,39 @@ class FacturacionController
         } catch (FacturacionException $e) {
             ResponseHelper::validationError($e->getMessage());
         } catch (\Throwable $e) {
-            ResponseHelper::internalError('Error al emitir comprobante: ' . $e->getMessage());
+            ResponseHelper::internalException($e, 'Error al emitir comprobante');
         }
     }
 
     private function getAbsolutePath(?string $path): ?string
     {
-        if (empty($path)) return null;
-        if (strpos($path, 'D:') === 0 || strpos($path, 'C:') === 0 || strpos($path, '/') === 0) {
-            return $path;
-        }
-        $pos = strpos($path, 'storage/');
-        if ($pos !== false) {
-            $path = substr($path, $pos);
-        }
-        return dirname(__DIR__, 4) . '/' . $path;
+        return \App\Facturacion\Config\FacturacionConfig::getInstance()
+            ->resolveProjectPath($path);
     }
 
     public function descargarPdf(string $id): void
     {
         try {
-            $comprobante = $this->facturacionService->obtenerComprobante((int) $id);
+            $comprobante = $this->facturacionService->obtenerComprobante(
+                (int) $id,
+                $this->authenticatedEmpresaId()
+            );
 
             if (!$comprobante) {
                 ResponseHelper::notFound('Comprobante no encontrado');
             }
 
             $formato = \Flight::request()->query->formato ?? 'a4';
+            $disposicion = strtolower(trim((string) (
+                \Flight::request()->query->disposicion ?? 'attachment'
+            )));
+
+            if (!in_array($disposicion, ['attachment', 'inline'], true)) {
+                ResponseHelper::validationError(
+                    'La disposición debe ser attachment o inline'
+                );
+            }
+
             $pdfPath = $this->getAbsolutePath($comprobante->pdfPath);
 
             if ($formato === 'ticket') {
@@ -148,20 +153,26 @@ class FacturacionController
             }
 
             header('Content-Type: application/pdf');
-            header('Content-Disposition: attachment; filename="' . basename($pdfPath) . '"');
+            header(
+                'Content-Disposition: ' . $disposicion
+                . '; filename="' . basename($pdfPath) . '"'
+            );
             header('Content-Length: ' . filesize($pdfPath));
             readfile($pdfPath);
             exit;
 
         } catch (\Throwable $e) {
-            ResponseHelper::internalError('Error al descargar PDF: ' . $e->getMessage());
+            ResponseHelper::internalException($e, 'Error al descargar PDF');
         }
     }
 
     public function descargarXml(string $id): void
     {
         try {
-            $comprobante = $this->facturacionService->obtenerComprobante((int) $id);
+            $comprobante = $this->facturacionService->obtenerComprobante(
+                (int) $id,
+                $this->authenticatedEmpresaId()
+            );
 
             if (!$comprobante) {
                 ResponseHelper::notFound('Comprobante no encontrado');
@@ -180,14 +191,17 @@ class FacturacionController
             exit;
 
         } catch (\Throwable $e) {
-            ResponseHelper::internalError('Error al descargar XML: ' . $e->getMessage());
+            ResponseHelper::internalException($e, 'Error al descargar XML');
         }
     }
 
     public function descargarCdr(string $id): void
     {
         try {
-            $comprobante = $this->facturacionService->obtenerComprobante((int) $id);
+            $comprobante = $this->facturacionService->obtenerComprobante(
+                (int) $id,
+                $this->authenticatedEmpresaId()
+            );
 
             if (!$comprobante) {
                 ResponseHelper::notFound('Comprobante no encontrado');
@@ -206,14 +220,23 @@ class FacturacionController
             exit;
 
         } catch (\Throwable $e) {
-            ResponseHelper::internalError('Error al descargar CDR: ' . $e->getMessage());
+            ResponseHelper::internalException($e, 'Error al descargar CDR');
         }
     }
 
     public function procesar(string $id): void
     {
         try {
-            $comprobante = $this->facturacionService->procesar((int) $id);
+            $empresaId = $this->authenticatedEmpresaId();
+            if (!$this->facturacionService->obtenerComprobante((int) $id, $empresaId)) {
+                ResponseHelper::notFound('Comprobante no encontrado');
+            }
+
+            $comprobante = $this->facturacionService->procesar(
+                (int) $id,
+                $empresaId
+            );
+            $empresa = $this->facturacionService->obtenerEmpresa($empresaId);
 
             $cleanPath = function($path) {
                 if (empty($path)) return null;
@@ -228,6 +251,7 @@ class FacturacionController
                 'correlativo' => str_pad((string) $comprobante->correlativo, 8, '0', STR_PAD_LEFT),
                 'numero' => $comprobante->getNumeroFormato(),
                 'estado' => $comprobante->estado,
+                'entorno' => $empresa?->entorno,
                 'hash' => $comprobante->hashCpe,
                 'xml_path' => $cleanPath($comprobante->xmlPath),
                 'pdf_path' => $cleanPath($comprobante->pdfPath),
@@ -237,19 +261,22 @@ class FacturacionController
 
             ResponseHelper::success($response);
 
+        } catch (SunatException $e) {
+            ResponseHelper::sunatError($e->getMessage(), $e->getSunatCode());
         } catch (FacturacionException $e) {
             ResponseHelper::validationError($e->getMessage());
-        } catch (SunatException $e) {
-            ResponseHelper::sunatError($e->getMessage());
         } catch (\Throwable $e) {
-            ResponseHelper::internalError('Error al procesar comprobante: ' . $e->getMessage());
+            ResponseHelper::internalException($e, 'Error al procesar comprobante');
         }
     }
 
     public function consultarEstado(string $id): void
     {
         try {
-            $comprobante = $this->facturacionService->obtenerComprobante((int) $id);
+            $comprobante = $this->facturacionService->obtenerComprobante(
+                (int) $id,
+                $this->authenticatedEmpresaId()
+            );
 
             if (!$comprobante) {
                 ResponseHelper::notFound('Comprobante no encontrado');
@@ -262,20 +289,14 @@ class FacturacionController
             }
 
             $sunatService = new SunatService(Database::getConnection());
-            $resultado = $sunatService->consultarEstado(
-                $empresa,
-                $empresa->ruc,
-                $comprobante->tipoComprobante,
-                $comprobante->serie,
-                $comprobante->correlativo
-            );
+            $resultado = $sunatService->consultarEstadoComprobante($empresa, $comprobante);
 
             ResponseHelper::success($resultado);
 
         } catch (SunatException $e) {
-            ResponseHelper::sunatError($e->getMessage());
+            ResponseHelper::sunatError($e->getMessage(), $e->getSunatCode());
         } catch (\Throwable $e) {
-            ResponseHelper::internalError('Error al consultar estado: ' . $e->getMessage());
+            ResponseHelper::internalException($e, 'Error al consultar estado');
         }
     }
 
@@ -288,12 +309,20 @@ class FacturacionController
             ResponseHelper::validationError('JSON inválido');
         }
 
-        $authEmpresaId = \Flight::get('auth_empresa_id');
-        if ($authEmpresaId) {
-            $data['empresa_id'] = $authEmpresaId;
-        }
+        // La empresa siempre proviene del token; cualquier valor del cliente se sobrescribe.
+        $data = ApiAuthPolicy::bindEmpresa($data, $this->authenticatedEmpresaId());
 
         return $data;
+    }
+
+    private function authenticatedEmpresaId(): int
+    {
+        $empresaId = (int) (\Flight::get('auth_empresa_id') ?? 0);
+        if ($empresaId <= 0) {
+            ResponseHelper::unauthorized('Token empresarial requerido');
+        }
+
+        return $empresaId;
     }
 
 }

@@ -6,10 +6,15 @@ Dependencias instaladas:
 - greenter/xmldsig v5.0.3
 Nota: Se habilitó extensión soap en php.ini (requiere reiniciar PHP/Apache en Laragon).
 
-http://api-sunat-peru.test/api/facturacion/comprobantes/15/procesar
+POST http://api-sunat-peru.test/api/facturacion/comprobantes/15/procesar
+Body: {"token":"TOKEN_DE_LA_EMPRESA"}
 
-PDF: GET http://api-sunat-peru.test/api/facturacion/comprobantes/6/pdf
-XML: GET http://api-sunat-peru.test/api/facturacion/comprobantes/6/xml
+PDF: GET http://api-sunat-peru.test/api/facturacion/comprobantes/6/pdf?token=TOKEN_DE_LA_EMPRESA
+PDF para visualizar: GET http://api-sunat-peru.test/api/facturacion/comprobantes/6/pdf?disposicion=inline&token=TOKEN_DE_LA_EMPRESA
+XML: GET http://api-sunat-peru.test/api/facturacion/comprobantes/6/xml?token=TOKEN_DE_LA_EMPRESA
+
+El token determina la empresa. No enviar `empresa_id`. Las rutas públicas de
+comprobantes no aceptan el JWT del dashboard. Documentación completa: `/doc`.
 
 admin@admin.com
 admin123

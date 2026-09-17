@@ -1,6 +1,21 @@
 RewriteEngine On
 
+# =====================================================
+# Protección de archivos sensibles (el docroot es la raíz)
+# =====================================================
+
+# Bloquear acceso web a .env, .git, storage privado, sql, tests, docs internos
+RewriteRule ^(\\.env(\\..*)?|composer\\.(json|lock)|cookies\\.txt)$ - [F,L,NC]
+RewriteRule ^\\.git - [F,L,NC]
+RewriteRule ^(storage|sql|tests|features) - [F,L,NC]
+
+# =====================================================
+# Front Controller
+# =====================================================
 # Redirigir todo a index.php
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ index.php [QSA,L]
+
+# No listar directorios
+Options -Indexes

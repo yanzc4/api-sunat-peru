@@ -11,6 +11,8 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../../vendor/autoload.php';
 
+Dotenv\Dotenv::createImmutable(dirname(__DIR__, 2))->safeLoad();
+
 use App\Facturacion\Repositories\ComprobanteRepository;
 use App\Facturacion\Repositories\EmpresaFacturacionRepository;
 use App\Facturacion\Config\FacturacionConfig;
@@ -44,9 +46,9 @@ echo "NOTA: Este test requiere BD configurada.\n\n";
 
 function getPdo(): PDO
 {
-    $dsn = getenv('FAC_DB_DSN') ?: 'mysql:host=localhost;dbname=facturacion;charset=utf8mb4';
-    $user = getenv('FAC_DB_USER') ?: 'root';
-    $pass = getenv('FAC_DB_PASS') ?: '';
+    $dsn = $_ENV['FAC_DB_DSN'] ?? 'mysql:host=localhost;dbname=facturacion;charset=utf8mb4';
+    $user = $_ENV['FAC_DB_USER'] ?? 'root';
+    $pass = $_ENV['FAC_DB_PASS'] ?? '';
 
     return new PDO($dsn, $user, $pass, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -78,16 +80,16 @@ try {
         $correlativos = [];
         $numTests = 10;
 
-        for ($i = 0; $i < $numTests; $i++) {
-            $pdo->beginTransaction();
-            try {
+        $pdo->beginTransaction();
+        try {
+            for ($i = 0; $i < $numTests; $i++) {
                 $c = $repo->obtenerCorrelativo(1, '01', 'F001');
                 $correlativos[] = $c;
-                $pdo->rollBack();
-            } catch (\Exception $e) {
-                $pdo->rollBack();
-                throw $e;
             }
+            $pdo->rollBack();
+        } catch (\Exception $e) {
+            if ($pdo->inTransaction()) $pdo->rollBack();
+            throw $e;
         }
 
         $unique = array_unique($correlativos);
@@ -107,8 +109,8 @@ try {
     });
 
 } catch (\Exception $e) {
-    echo "\n[ERROR] No se pudo conectar a la BD: " . $e->getMessage() . "\n";
-    echo "Saltando tests de concurrencia.\n";
+    echo "\n[SKIP] No se pudo conectar a la BD; se omiten tests de concurrencia.\n";
+    exit(2);
 }
 
 echo "\n=== Results: {$passed} passed, {$failed} failed ===\n";
