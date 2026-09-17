@@ -16,6 +16,8 @@ class FacturacionConfig
     private string $encryptionIv;
     private string $jwtSecret;
     private int $jwtTtl;
+    private string $documentLookupBaseUrl;
+    private string $documentLookupToken;
 
     private function __construct()
     {
@@ -35,6 +37,10 @@ class FacturacionConfig
         if ($this->jwtTtl <= 0) {
             $this->jwtTtl = 28800;
         }
+
+        $this->documentLookupBaseUrl = $_ENV['FAC_DOCUMENT_LOOKUP_BASE_URL']
+            ?? 'https://apiperu.codemultiall.net.pe/api/v1';
+        $this->documentLookupToken = $_ENV['FAC_DOCUMENT_LOOKUP_TOKEN'] ?? '';
     }
 
     public static function getInstance(): self
@@ -135,6 +141,16 @@ class FacturacionConfig
     public function getJwtTtl(): int
     {
         return $this->jwtTtl;
+    }
+
+    public function getDocumentLookupBaseUrl(): string
+    {
+        return $this->documentLookupBaseUrl;
+    }
+
+    public function getDocumentLookupToken(): string
+    {
+        return $this->documentLookupToken;
     }
 
     public function getSunatBetaUrl(): string

@@ -7,6 +7,8 @@ require_once __DIR__ . '/../vendor/autoload.php';
 use App\Facturacion\Controllers\EmpresaController;
 use App\Facturacion\Controllers\FacturacionController;
 use App\Facturacion\Controllers\UsuarioController;
+use App\Facturacion\Controllers\ProductoController;
+use App\Facturacion\Controllers\PosController;
 use App\Facturacion\Config\Database;
 use App\Facturacion\Helpers\AuthGuard;
 use App\Facturacion\Helpers\ApiAuthPolicy;
@@ -125,6 +127,50 @@ Flight::route('POST /api/facturacion/empresas/@id/series', function (string $id)
 Flight::route('POST /api/facturacion/usuarios', function () {
     $controller = new UsuarioController();
     $controller->crear();
+});
+
+// =====================================================
+// Catálogo y facturador interno (JWT + empresa propietaria)
+// =====================================================
+
+Flight::route('POST /api/facturacion/productos', function () {
+    (new ProductoController())->crear();
+});
+
+Flight::route('PUT /api/facturacion/productos/@id', function (string $id) {
+    (new ProductoController())->editar($id);
+});
+
+Flight::route('DELETE /api/facturacion/productos/@id', function (string $id) {
+    (new ProductoController())->eliminar($id);
+});
+
+Flight::route('GET /api/facturacion/pos/productos', function () {
+    (new ProductoController())->buscar();
+});
+
+Flight::route('GET /api/facturacion/pos/series', function () {
+    (new PosController())->series();
+});
+
+Flight::route('GET /api/facturacion/pos/documentos/@tipo/@numero', function (string $tipo, string $numero) {
+    (new PosController())->consultarDocumento($tipo, $numero);
+});
+
+Flight::route('POST /api/facturacion/pos/comprobantes', function () {
+    (new PosController())->crearComprobante();
+});
+
+Flight::route('POST /api/facturacion/pos/comprobantes/@id/procesar', function (string $id) {
+    (new PosController())->procesar($id);
+});
+
+Flight::route('GET /api/facturacion/pos/comprobantes/@id/pdf', function (string $id) {
+    (new PosController())->pdf($id);
+});
+
+Flight::route('GET /api/facturacion/pos/ventas/@id', function (string $id) {
+    (new PosController())->venta($id);
 });
 
 // =====================================================
@@ -262,6 +308,21 @@ Flight::route('GET /usuarios', function () {
     AuthGuard::requireAdmin();
     $usuario = AuthGuard::requireWebUser();
     require dirname(__DIR__) . '/views/users/index.php';
+});
+
+Flight::route('GET /productos', function () {
+    $usuario = AuthGuard::requireWebUser();
+    require dirname(__DIR__) . '/views/products/index.php';
+});
+
+Flight::route('GET /vender', function () {
+    $usuario = AuthGuard::requireWebUser();
+    require dirname(__DIR__) . '/views/pos/index.php';
+});
+
+Flight::route('GET /ventas', function () {
+    $usuario = AuthGuard::requireWebUser();
+    require dirname(__DIR__) . '/views/sales/index.php';
 });
 
 // =====================================================

@@ -41,3 +41,38 @@ admin123
     }
   ]
 }
+
+## Facturador interno
+
+Las rutas `/productos`, `/vender` y `/ventas` usan la sesión JWT del panel. No exponen el
+token empresarial de la API pública. Tanto administradores como clientes solo
+pueden trabajar con empresas cuyo `usuario_id` coincide con el usuario actual.
+
+Antes de usar el catálogo, ejecutar manualmente:
+
+```sql
+SOURCE sql/20260917_create_productos.sql;
+```
+
+### Consulta de DNI y RUC
+
+La integración está encapsulada en
+`app/Facturacion/Services/DocumentLookupService.php`. Para cambiar de proveedor
+en el futuro, se debe reemplazar esa clase o adaptar su normalización, manteniendo
+la respuesta interna con `tipo_documento`, `numero_documento`, `nombre` y
+`direccion`.
+
+Las credenciales se leen únicamente en el servidor desde `.env`:
+
+```dotenv
+FAC_DOCUMENT_LOOKUP_BASE_URL=https://apiperu.codemultiall.net.pe/api/v1
+FAC_DOCUMENT_LOOKUP_TOKEN=token-privado-del-proveedor
+```
+
+El token no se incluye en HTML ni JavaScript. La consulta utiliza tiempos límite
+de conexión y permite continuar llenando los datos del cliente manualmente si el
+proveedor no responde.
+
+La impresión y la opción de compartir descargan el PDF mediante una ruta interna
+protegida por JWT. El navegador lo mantiene como `Blob`; para compartir se crea
+un objeto `File` y se usa Web Share API, sin entregar el enlace del archivo.

@@ -32,6 +32,22 @@ test('Empresas exige JWT y no token API', function () {
     assertSameValue(ApiAuthPolicy::JWT, ApiAuthPolicy::forPath('/api/facturacion/empresas/2/logo'));
 });
 
+test('Productos y POS internos exigen JWT', function () {
+    foreach ([
+        '/api/facturacion/productos',
+        '/api/facturacion/productos/8',
+        '/api/facturacion/pos/productos',
+        '/api/facturacion/pos/series',
+        '/api/facturacion/pos/documentos/dni/74723854',
+        '/api/facturacion/pos/comprobantes',
+        '/api/facturacion/pos/comprobantes/15/procesar',
+        '/api/facturacion/pos/comprobantes/15/pdf',
+        '/api/facturacion/pos/ventas/15',
+    ] as $path) {
+        assertSameValue(ApiAuthPolicy::JWT, ApiAuthPolicy::forPath($path));
+    }
+});
+
 test('GET solo extrae token del query', function () {
     assertSameValue('query-token', ApiAuthPolicy::extractApiToken('GET', ['token' => 'query-token'], '{"token":"body-token"}'));
 });
