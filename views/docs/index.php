@@ -155,7 +155,58 @@ $cssVersion = is_file($cssPath) ? (string) filemtime($cssPath) : '1';
 
                 <section id="emitir" data-doc-section class="docs-section mb-6 border border-black/10 bg-white/50 dark:border-white/10 dark:bg-white/[.025]">
                     <div class="flex flex-col gap-3 border-b border-black/10 p-5 dark:border-white/10 sm:flex-row sm:items-center"><span class="w-fit bg-[#0ea5e9] px-3 py-1.5 font-mono text-[10px] font-black tracking-wider text-black">POST</span><code class="break-all font-mono text-sm font-bold">/api/facturacion/comprobantes</code><span class="sm:ml-auto font-mono text-[10px] text-black/35 dark:text-white/30">#03</span></div>
-                    <div class="p-5 sm:p-7"><p class="text-sm leading-7 text-black/65 dark:text-white/60">Crea el comprobante y reserva su correlativo; todavía no lo envía a SUNAT.</p><pre class="docs-code">{
+                    <div class="p-5 sm:p-7">
+                        <p class="text-sm leading-7 text-black/65 dark:text-white/60">Crea el comprobante y reserva su correlativo; todavía no lo envía a SUNAT. La serie debe existir previamente en la empresa autenticada y corresponder al tipo enviado.</p>
+
+                        <div class="mt-6 overflow-x-auto border border-black/10 dark:border-white/10">
+                            <table class="w-full min-w-[38rem] border-collapse text-left text-sm">
+                                <thead class="bg-ink text-white dark:bg-signal dark:text-black"><tr><th class="px-4 py-3 font-mono text-xs uppercase tracking-wider">Código</th><th class="px-4 py-3 font-mono text-xs uppercase tracking-wider">Comprobante</th><th class="px-4 py-3 font-mono text-xs uppercase tracking-wider">Serie habitual</th><th class="px-4 py-3 font-mono text-xs uppercase tracking-wider">Cliente</th></tr></thead>
+                                <tbody class="divide-y divide-black/10 bg-white/45 dark:divide-white/10 dark:bg-white/[.025]">
+                                    <tr><td class="px-4 py-3 font-mono font-bold">01</td><td class="px-4 py-3">Factura</td><td class="px-4 py-3 font-mono">F001</td><td class="px-4 py-3">RUC (tipo 6)</td></tr>
+                                    <tr><td class="px-4 py-3 font-mono font-bold">03</td><td class="px-4 py-3">Boleta de venta</td><td class="px-4 py-3 font-mono">B001</td><td class="px-4 py-3">DNI (tipo 1)</td></tr>
+                                    <tr><td class="px-4 py-3 font-mono font-bold">07</td><td class="px-4 py-3">Nota de crédito</td><td class="px-4 py-3 font-mono">FC01</td><td class="px-4 py-3">Según comprobante afectado</td></tr>
+                                    <tr><td class="px-4 py-3 font-mono font-bold">08</td><td class="px-4 py-3">Nota de débito</td><td class="px-4 py-3 font-mono">FD01</td><td class="px-4 py-3">Según comprobante afectado</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <h3 class="mt-8 font-display text-xl font-bold tracking-[-.03em]">Factura electrónica · tipo 01</h3>
+                        <p class="mt-2 text-sm leading-7 text-black/60 dark:text-white/55">Ejemplo con cliente identificado mediante RUC y dos conceptos gravados.</p>
+                        <pre class="docs-code">{
+  "token": "TU_TOKEN",
+  "tipo_comprobante": "01",
+  "serie": "F001",
+  "moneda": "PEN",
+  "fecha_emision": "2026-09-17",
+  "cliente": {
+    "tipo_documento": "6",
+    "numero_documento": "20123456789",
+    "nombre": "COMERCIAL ANDINA S.A.C.",
+    "direccion": "Av. Javier Prado 1234, Lima"
+  },
+  "items": [
+    {
+      "codigo": "SERV-001",
+      "descripcion": "Servicio de consultoría",
+      "unidad": "ZZ",
+      "cantidad": 1,
+      "precio_unitario": 1180.00,
+      "afectacion_igv": "10"
+    },
+    {
+      "codigo": "P001",
+      "descripcion": "Licencia mensual",
+      "unidad": "NIU",
+      "cantidad": 2,
+      "precio_unitario": 59.00,
+      "afectacion_igv": "10"
+    }
+  ]
+}</pre>
+
+                        <h3 class="mt-8 font-display text-xl font-bold tracking-[-.03em]">Boleta de venta electrónica · tipo 03</h3>
+                        <p class="mt-2 text-sm leading-7 text-black/60 dark:text-white/55">Ejemplo con cliente identificado mediante DNI.</p>
+                        <pre class="docs-code">{
   "token": "TU_TOKEN",
   "tipo_comprobante": "03",
   "serie": "B001",
@@ -169,14 +220,68 @@ $cssVersion = is_file($cssPath) ? (string) filemtime($cssPath) : '1';
     "codigo": "P001", "descripcion": "Producto de prueba", "unidad": "NIU",
     "cantidad": 1, "precio_unitario": 118.00, "afectacion_igv": "10"
   }]
-}</pre><pre class="docs-code">{
+}</pre>
+
+                        <h3 class="mt-8 font-display text-xl font-bold tracking-[-.03em]">Nota de crédito electrónica · tipo 07</h3>
+                        <p class="mt-2 text-sm leading-7 text-black/60 dark:text-white/55">Usa una serie de nota de crédito configurada para la empresa. Limitación actual: el XML usa internamente el motivo <code>01</code> (anulación), el tipo afectado <code>01</code> y la referencia fija <code>0001-00000001</code>; estos valores todavía no se reciben en el JSON.</p>
+                        <pre class="docs-code">{
+  "token": "TU_TOKEN",
+  "tipo_comprobante": "07",
+  "serie": "FC01",
+  "moneda": "PEN",
+  "fecha_emision": "2026-09-17",
+  "cliente": {
+    "tipo_documento": "6",
+    "numero_documento": "20123456789",
+    "nombre": "COMERCIAL ANDINA S.A.C.",
+    "direccion": "Av. Javier Prado 1234, Lima"
+  },
+  "items": [{
+    "codigo": "P001",
+    "descripcion": "Anulación de producto facturado",
+    "unidad": "NIU",
+    "cantidad": 1,
+    "precio_unitario": 118.00,
+    "afectacion_igv": "10"
+  }]
+}</pre>
+
+                        <h3 class="mt-8 font-display text-xl font-bold tracking-[-.03em]">Nota de débito electrónica · tipo 08</h3>
+                        <p class="mt-2 text-sm leading-7 text-black/60 dark:text-white/55">Usa una serie de nota de débito configurada para la empresa. Limitación actual: el XML usa internamente el motivo <code>01</code>, el tipo afectado <code>01</code> y la referencia fija <code>0001-00000001</code>; estos valores todavía no se reciben en el JSON.</p>
+                        <pre class="docs-code">{
+  "token": "TU_TOKEN",
+  "tipo_comprobante": "08",
+  "serie": "FD01",
+  "moneda": "PEN",
+  "fecha_emision": "2026-09-17",
+  "cliente": {
+    "tipo_documento": "6",
+    "numero_documento": "20123456789",
+    "nombre": "COMERCIAL ANDINA S.A.C.",
+    "direccion": "Av. Javier Prado 1234, Lima"
+  },
+  "items": [{
+    "codigo": "CARGO-001",
+    "descripcion": "Cargo adicional por diferencia de precio",
+    "unidad": "ZZ",
+    "cantidad": 1,
+    "precio_unitario": 59.00,
+    "afectacion_igv": "10"
+  }]
+}</pre>
+
+                        <h3 class="mt-8 font-display text-xl font-bold tracking-[-.03em]">Respuesta de creación</h3>
+                        <pre class="docs-code">{
   "success": true,
   "data": {
-    "id": 12, "tipo": "03", "serie": "B001", "correlativo": "00000012",
-    "numero": "B001-00000012", "estado": "pendiente", "entorno": "beta",
+    "id": 12, "tipo": "01", "serie": "F001", "correlativo": "00000012",
+    "numero": "F001-00000012", "estado": "pendiente", "entorno": "beta",
     "message": "Comprobante creado. Usar POST /procesar para enviar a SUNAT."
   }
-}</pre><p class="mt-5 text-sm"><strong>201 Created.</strong> Tipos: 01, 03, 07 y 08. Monedas: PEN y USD.</p></div>
+}</pre>
+                        <div class="mt-6 border-l-4 border-[#b9ff00] bg-black/[.035] p-4 text-sm leading-7 text-black/65 dark:bg-white/[.04] dark:text-white/60"><strong class="text-black dark:text-white">Campos comunes:</strong> monedas <code>PEN</code> y <code>USD</code>; afectaciones IGV <code>10</code>, <code>20</code>, <code>30</code> y <code>21</code>. El <code>precio_unitario</code> gravado incluye IGV. No envíes <code>empresa_id</code>: la empresa se obtiene del token.</div>
+                        <p class="mt-5 text-sm"><strong>201 Created.</strong> El comprobante queda en estado <code>pendiente</code> y debe procesarse en una segunda solicitud.</p>
+                    </div>
                 </section>
 
                 <section id="procesar" data-doc-section class="docs-section mb-6 border border-black/10 bg-white/50 dark:border-white/10 dark:bg-white/[.025]">

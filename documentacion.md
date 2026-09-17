@@ -43,6 +43,57 @@ Respuesta HTTP 200. Devuelve 404 si el ID no existe o pertenece a otra empresa.
 
 ### POST `/api/facturacion/comprobantes`
 
+Este endpoint crea el comprobante y reserva su correlativo. Todavía no lo envía
+a SUNAT. La serie debe existir previamente en la empresa autenticada y debe
+corresponder al tipo de comprobante enviado.
+
+Tipos admitidos por el sistema:
+
+| Código | Comprobante | Serie habitual | Identificación del cliente |
+| --- | --- | --- | --- |
+| `01` | Factura electrónica | `F001` | RUC, tipo `6` |
+| `03` | Boleta de venta electrónica | `B001` | DNI, tipo `1` |
+| `07` | Nota de crédito electrónica | `FC01` | Según comprobante afectado |
+| `08` | Nota de débito electrónica | `FD01` | Según comprobante afectado |
+
+#### Ejemplo: factura electrónica (tipo 01)
+
+```json
+{
+  "token": "TU_TOKEN",
+  "tipo_comprobante": "01",
+  "serie": "F001",
+  "moneda": "PEN",
+  "fecha_emision": "2026-09-17",
+  "cliente": {
+    "tipo_documento": "6",
+    "numero_documento": "20123456789",
+    "nombre": "COMERCIAL ANDINA S.A.C.",
+    "direccion": "Av. Javier Prado 1234, Lima"
+  },
+  "items": [
+    {
+      "codigo": "SERV-001",
+      "descripcion": "Servicio de consultoría",
+      "unidad": "ZZ",
+      "cantidad": 1,
+      "precio_unitario": 1180.00,
+      "afectacion_igv": "10"
+    },
+    {
+      "codigo": "P001",
+      "descripcion": "Licencia mensual",
+      "unidad": "NIU",
+      "cantidad": 2,
+      "precio_unitario": 59.00,
+      "afectacion_igv": "10"
+    }
+  ]
+}
+```
+
+#### Ejemplo: boleta de venta electrónica (tipo 03)
+
 ```json
 {
   "token": "TU_TOKEN",
@@ -67,6 +118,67 @@ Respuesta HTTP 200. Devuelve 404 si el ID no existe o pertenece a otra empresa.
 }
 ```
 
+#### Ejemplo: nota de crédito electrónica (tipo 07)
+
+La serie debe estar configurada como nota de crédito. Limitación actual: el XML
+usa internamente el motivo `01` (anulación), el tipo afectado `01` y la
+referencia fija `0001-00000001`; estos valores todavía no se reciben en el JSON
+público.
+
+```json
+{
+  "token": "TU_TOKEN",
+  "tipo_comprobante": "07",
+  "serie": "FC01",
+  "moneda": "PEN",
+  "fecha_emision": "2026-09-17",
+  "cliente": {
+    "tipo_documento": "6",
+    "numero_documento": "20123456789",
+    "nombre": "COMERCIAL ANDINA S.A.C.",
+    "direccion": "Av. Javier Prado 1234, Lima"
+  },
+  "items": [{
+    "codigo": "P001",
+    "descripcion": "Anulación de producto facturado",
+    "unidad": "NIU",
+    "cantidad": 1,
+    "precio_unitario": 118.00,
+    "afectacion_igv": "10"
+  }]
+}
+```
+
+#### Ejemplo: nota de débito electrónica (tipo 08)
+
+La serie debe estar configurada como nota de débito. Limitación actual: el XML
+usa internamente el motivo `01`, el tipo afectado `01` y la referencia fija
+`0001-00000001`; estos valores todavía no se reciben en el JSON público.
+
+```json
+{
+  "token": "TU_TOKEN",
+  "tipo_comprobante": "08",
+  "serie": "FD01",
+  "moneda": "PEN",
+  "fecha_emision": "2026-09-17",
+  "cliente": {
+    "tipo_documento": "6",
+    "numero_documento": "20123456789",
+    "nombre": "COMERCIAL ANDINA S.A.C.",
+    "direccion": "Av. Javier Prado 1234, Lima"
+  },
+  "items": [{
+    "codigo": "CARGO-001",
+    "descripcion": "Cargo adicional por diferencia de precio",
+    "unidad": "ZZ",
+    "cantidad": 1,
+    "precio_unitario": 59.00,
+    "afectacion_igv": "10"
+  }]
+}
+```
+
 Respuesta HTTP 201:
 
 ```json
@@ -74,10 +186,10 @@ Respuesta HTTP 201:
   "success": true,
   "data": {
     "id": 12,
-    "tipo": "03",
-    "serie": "B001",
+    "tipo": "01",
+    "serie": "F001",
     "correlativo": "00000012",
-    "numero": "B001-00000012",
+    "numero": "F001-00000012",
     "estado": "pendiente",
     "entorno": "beta",
     "message": "Comprobante creado. Usar POST /procesar para enviar a SUNAT."
@@ -85,7 +197,9 @@ Respuesta HTTP 201:
 }
 ```
 
-Tipos: `01`, `03`, `07`, `08`. Monedas: `PEN`, `USD`. Afectaciones IGV: `10`, `20`, `30`, `21`.
+Monedas: `PEN`, `USD`. Afectaciones IGV: `10`, `20`, `30`, `21`. En
+operaciones gravadas, `precio_unitario` incluye IGV. No envíes `empresa_id`:
+la empresa se determina exclusivamente mediante el token.
 
 ### POST `/api/facturacion/comprobantes/{id}/procesar`
 
