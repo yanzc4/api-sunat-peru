@@ -77,6 +77,12 @@ class ResponseHelper
         self::error('FORBIDDEN', $message, 403);
     }
 
+    public static function tooManyRequests(string $message, int $retryAfter): void
+    {
+        header('Retry-After: ' . max(1, $retryAfter));
+        self::error('RATE_LIMITED', $message, 429, ['retry_after' => max(1, $retryAfter)]);
+    }
+
     public static function internalError(string $message = 'Error interno del servidor'): void
     {
         self::error('INTERNAL_ERROR', $message, 500);

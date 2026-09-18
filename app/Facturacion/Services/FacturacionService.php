@@ -78,7 +78,7 @@ class FacturacionService
             );
         }
 
-        if (!in_array($comprobante->estado, ['pendiente', 'generando', 'error'])) {
+        if (!in_array($comprobante->estado, ['pendiente', 'error'], true)) {
             throw new FacturacionException(
                 "El comprobante no puede ser procesado. Estado actual: {$comprobante->estado}"
             );
@@ -93,8 +93,15 @@ class FacturacionService
             );
         }
 
+        if (!$this->comprobanteRepo->claimForProcessing($comprobanteId, $empresaId)) {
+            $actual = $this->comprobanteRepo->findByIdAndEmpresa($comprobanteId, $empresaId);
+            throw new FacturacionException(
+                'El comprobante ya está siendo procesado o cambió de estado. Estado actual: '
+                . ($actual?->estado ?? 'no disponible')
+            );
+        }
+
         // 1. Generar XML UBL 2.1
-        $this->comprobanteRepo->updateEstado($comprobanteId, 'generando');
 
         $xmlService = new XmlService();
         try {

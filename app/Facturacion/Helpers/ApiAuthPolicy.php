@@ -11,6 +11,11 @@ final class ApiAuthPolicy
 
     public static function forPath(string $path): ?string
     {
+        $parsedPath = parse_url($path, PHP_URL_PATH);
+        if (is_string($parsedPath) && $parsedPath !== '') {
+            $path = $parsedPath;
+        }
+
         if (self::matchesPrefix($path, '/api/facturacion/comprobantes')) {
             return self::API_TOKEN;
         }

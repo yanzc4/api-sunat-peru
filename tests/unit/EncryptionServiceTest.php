@@ -10,6 +10,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../vendor/autoload.php';
 
 use App\Facturacion\Services\EncryptionService;
+use App\Facturacion\Config\FacturacionConfig;
 
 $passed = 0;
 $failed = 0;
@@ -56,7 +57,45 @@ test('Different encryptions decrypt to same value', function () use ($encryption
     $original = 'password-repetible';
     $enc1 = $encryption->encrypt($original);
     $enc2 = $encryption->encrypt($original);
+    assertEquals(true, $enc1 !== $enc2, 'Cada cifrado debe usar un nonce diferente');
     assertEquals($encryption->decrypt($enc1), $encryption->decrypt($enc2));
+});
+
+test('New ciphertext uses authenticated v2 format', function () use ($encryption) {
+    $encrypted = $encryption->encrypt('contenido-autenticado');
+    assertEquals(true, str_starts_with($encrypted, 'v2:'), 'El cifrado nuevo debe usar el formato v2');
+});
+
+test('Legacy AES-CBC ciphertext remains readable', function () use ($encryption) {
+    $config = FacturacionConfig::getInstance();
+    $legacy = openssl_encrypt(
+        'credencial-existente',
+        'aes-256-cbc',
+        $config->getEncryptionKey(),
+        0,
+        substr($config->getEncryptionIv(), 0, 16)
+    );
+    if ($legacy === false) {
+        throw new RuntimeException('No se pudo preparar el cifrado heredado');
+    }
+    assertEquals('credencial-existente', $encryption->decrypt(base64_encode($legacy)));
+});
+
+test('Authenticated ciphertext rejects tampering', function () use ($encryption) {
+    $encrypted = $encryption->encrypt('no-modificar');
+    $payload = base64_decode(substr($encrypted, 3), true);
+    if ($payload === false || $payload === '') {
+        throw new RuntimeException('Payload de prueba inválido');
+    }
+    $payload[strlen($payload) - 1] = chr(ord($payload[strlen($payload) - 1]) ^ 1);
+    try {
+        $encryption->decrypt('v2:' . base64_encode($payload));
+        throw new RuntimeException('El cifrado alterado fue aceptado');
+    } catch (RuntimeException $exception) {
+        if ($exception->getMessage() === 'El cifrado alterado fue aceptado') {
+            throw $exception;
+        }
+    }
 });
 
 test('Empty string can be encrypted', function () use ($encryption) {

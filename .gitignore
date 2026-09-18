@@ -2,9 +2,6 @@
 /vendor/
 /node_modules/
 
-# Environment
-.env
-
 # Storage (certificados y comprobantes)
 /storage/private/
 

@@ -76,3 +76,9 @@ proveedor no responde.
 La impresión y la opción de compartir descargan el PDF mediante una ruta interna
 protegida por JWT. El navegador lo mantiene como `Blob`; para compartir se crea
 un objeto `File` y se usa Web Share API, sin entregar el enlace del archivo.
+
+
+- [ ] CREAR storage
+- [ ] CREAR storage/private
+- [ ] CREAR storage/public
+- [ ] SUBIR VENDOR

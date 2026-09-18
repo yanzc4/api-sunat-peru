@@ -1,0 +1,40 @@
+name: Desplegar hestia
+
+on:
+  push:
+    branches:
+      - main # cambia a master si usas esa rama
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: FTP Deploy (incremental)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USER }}
+          password: ${{ secrets.FTP_PASS }}
+          server-dir: /home/codemultiall/web/apisunat.codemultiall.net.pe/public_html/
+          exclude: |
+            **/.git
+            **/.git/**
+            **/.github/**
+            features/**
+            **/node_modules/**
+            **/.env
+            sql/**
+            storage/**
+            **/tests/**
+            vendor/**
+            check.php
+            composer.json
+            composer.lock
+            package.json
+            package-lock.json
+
+

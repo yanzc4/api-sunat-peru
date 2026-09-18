@@ -15,6 +15,7 @@ use App\Facturacion\Helpers\ApiAuthPolicy;
 use App\Facturacion\Repositories\ApiTokenRepository;
 use App\Facturacion\Repositories\EmpresaFacturacionRepository;
 use App\Facturacion\Helpers\ResponseHelper;
+use App\Facturacion\Helpers\RateLimiter;
 use App\Facturacion\Services\JwtService;
 
 // =====================================================
@@ -246,14 +247,29 @@ Flight::route('POST /login', function () {
     $req = Flight::request();
     $email = trim((string) ($req->data['email'] ?? $req->data->email ?? ''));
     $password = trim((string) ($req->data['password'] ?? $req->data->password ?? ''));
+    $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
+    $isJson = str_contains($req->type ?? '', 'application/json') || str_contains($accept, 'application/json');
+    $clientIp = trim((string) ($req->ip ?? '')) ?: 'unknown';
+    $limiter = new RateLimiter();
+
+    $ipAttempt = $limiter->consume('login_ip', $clientIp, 30, 900);
+    $accountAttempt = $limiter->consume('login_account', strtolower($email), 5, 900);
+    $blocked = !$ipAttempt['allowed'] ? $ipAttempt : (!$accountAttempt['allowed'] ? $accountAttempt : null);
+    if ($blocked !== null) {
+        $message = 'Demasiados intentos de acceso. Espera antes de volver a intentarlo.';
+        if ($isJson) {
+            ResponseHelper::tooManyRequests($message, $blocked['retry_after']);
+        }
+        header('Retry-After: ' . $blocked['retry_after']);
+        header('Location: /login?error=rate&retry=' . $blocked['retry_after']);
+        exit;
+    }
 
     $repo = new \App\Facturacion\Repositories\UsuarioRepository(Database::getConnection());
     $usuario = $repo->findByEmail($email);
 
     if (!$usuario || !password_verify($password, $usuario->password)) {
         // Cliente API (JSON) → 401; navegador → redirect con error
-        $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
-        $isJson = str_contains($req->type ?? '', 'application/json') || str_contains($accept, 'application/json');
         if ($isJson) {
             ResponseHelper::unauthorized('Credenciales incorrectas');
         }
@@ -261,11 +277,12 @@ Flight::route('POST /login', function () {
         exit;
     }
 
+    $limiter->clear('login_ip', $clientIp);
+    $limiter->clear('login_account', strtolower($email));
+
     $jwt = (new JwtService())->generate($usuario);
 
     // Cliente API (JSON) → token en el body
-    $accept = $_SERVER['HTTP_ACCEPT'] ?? '';
-    $isJson = str_contains($req->type ?? '', 'application/json') || str_contains($accept, 'application/json');
     if ($isJson) {
         ResponseHelper::success([
             'token' => $jwt['token'],
@@ -366,6 +383,18 @@ Flight::route('GET /contactar', function () {
 
 Flight::route('POST /request-access', function () {
     $req = Flight::request();
+    $clientIp = trim((string) ($req->ip ?? '')) ?: 'unknown';
+    $contactAttempt = (new RateLimiter())->consume('request_access_ip', $clientIp, 3, 3600);
+    if (!$contactAttempt['allowed']) {
+        header('Retry-After: ' . $contactAttempt['retry_after']);
+        Flight::json([
+            'success' => false,
+            'message' => 'Alcanzaste el límite de solicitudes. Intenta nuevamente más tarde.',
+            'retry_after' => $contactAttempt['retry_after'],
+        ], 429);
+        exit;
+    }
+
     $nombre = $req->data->nombre;
     $email = $req->data->email;
     $empresa = $req->data->empresa;
@@ -386,6 +415,8 @@ Flight::route('POST /request-access', function () {
     curl_setopt_array($ch, [
         CURLOPT_URL => $url,
         CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT => 15,
     ]);
     $response = curl_exec($ch);
     $error = curl_error($ch);

@@ -6,6 +6,7 @@ $root = dirname(__DIR__);
 $tests = [
     'tests/unit/StructureTest.php',
     'tests/unit/EncryptionServiceTest.php',
+    'tests/unit/RateLimiterTest.php',
     'tests/unit/ComprobanteDTOTest.php',
     'tests/unit/ResponseHelperTest.php',
     'tests/unit/JwtServiceTest.php',

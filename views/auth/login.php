@@ -1,7 +1,9 @@
 <?php
 declare(strict_types=1);
 
-$mostrarError = isset($_GET['error']);
+$errorTipo = (string) ($_GET['error'] ?? '');
+$mostrarError = $errorTipo !== '';
+$errorLimitado = $errorTipo === 'rate';
 $cssPath = dirname(__DIR__, 2) . '/public/assets/css/landing.css';
 $cssVersion = is_file($cssPath) ? (string) filemtime($cssPath) : '1';
 ?>
@@ -89,9 +91,9 @@ $cssVersion = is_file($cssPath) ? (string) filemtime($cssPath) : '1';
                 <span class="grid h-11 w-11 shrink-0 place-items-center border border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400"><svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 17h.01"/></svg></span>
                 <button type="button" data-close-error class="grid h-9 w-9 place-items-center border border-ink/15 text-lg transition hover:border-ink dark:border-white/15 dark:hover:border-white" aria-label="Cerrar mensaje">×</button>
             </div>
-            <p class="mt-6 text-[10px] font-extrabold uppercase tracking-[0.2em] text-red-600 dark:text-red-400">Acceso denegado</p>
+            <p class="mt-6 text-[10px] font-extrabold uppercase tracking-[0.2em] text-red-600 dark:text-red-400"><?= $errorLimitado ? 'Acceso temporalmente limitado' : 'Acceso denegado' ?></p>
             <h2 id="login-error-title" class="mt-2 font-display text-2xl font-extrabold tracking-[-0.035em]">No pudimos iniciar sesión</h2>
-            <p class="mt-3 text-sm leading-6 text-ink/55 dark:text-white/50">El correo o la contraseña no son correctos. Revisa los datos e inténtalo nuevamente.</p>
+            <p class="mt-3 text-sm leading-6 text-ink/55 dark:text-white/50"><?= $errorLimitado ? 'Se realizaron demasiados intentos. Espera unos minutos antes de volver a intentarlo.' : 'El correo o la contraseña no son correctos. Revisa los datos e inténtalo nuevamente.' ?></p>
             <button type="button" data-close-error class="mt-6 h-11 w-full bg-ink text-xs font-extrabold uppercase tracking-[0.13em] text-white dark:bg-signal dark:text-black">Intentar nuevamente</button>
         </div>
     </div>

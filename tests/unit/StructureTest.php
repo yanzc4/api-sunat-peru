@@ -63,6 +63,7 @@ test('composer.lock existe', fn() => assertFileExists("{$root}/composer.lock"));
 // Archivos principales
 test('FacturacionConfig.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Config/FacturacionConfig.php"));
 test('ResponseHelper.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Helpers/ResponseHelper.php"));
+test('RateLimiter.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Helpers/RateLimiter.php"));
 test('ApiAuthPolicy.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Helpers/ApiAuthPolicy.php"));
 test('EmpresaAccessPolicy.php existe', fn() => assertFileExists("{$root}/app/Facturacion/Helpers/EmpresaAccessPolicy.php"));
 

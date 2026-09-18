@@ -288,6 +288,26 @@ class ComprobanteRepository
         ]);
     }
 
+    public function claimForProcessing(int $id, int $empresaId): bool
+    {
+        $stmt = $this->pdo->prepare("
+            UPDATE comprobantes
+            SET estado = 'generando',
+                codigo_respuesta = NULL,
+                mensaje_respuesta = NULL,
+                updated_at = NOW()
+            WHERE id = :id
+              AND empresa_id = :empresa_id
+              AND estado IN ('pendiente', 'error')
+        ");
+        $stmt->execute([
+            ':id' => $id,
+            ':empresa_id' => $empresaId,
+        ]);
+
+        return $stmt->rowCount() === 1;
+    }
+
     private function makeRelative(?string $path): ?string
     {
         if ($path === null) return null;

@@ -146,9 +146,14 @@ class EmpresaController
             $empresa->activo = true;
 
             $id = $this->repo->create($empresa);
+            $empresaCreada = $this->repo->findById($id);
+            if ($empresaCreada === null) {
+                throw new \RuntimeException('La empresa fue creada, pero no pudo recuperarse para la respuesta');
+            }
 
-            $empresa->id = $id;
-            ResponseHelper::success($empresa->toArray(), 201);
+            $response = $empresaCreada->toArray();
+            $response['message'] = 'Empresa creada correctamente.';
+            ResponseHelper::success($response, 201);
 
         } catch (FacturacionException $e) {
             ResponseHelper::validationError($e->getMessage());

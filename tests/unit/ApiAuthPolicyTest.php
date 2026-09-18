@@ -57,6 +57,12 @@ test('GET solo extrae token del query', function () {
     assertSameValue('query-token', ApiAuthPolicy::extractApiToken('GET', ['token' => 'query-token'], '{"token":"body-token"}'));
 });
 
+test('La política ignora el query string al resolver la ruta', function () {
+    assertSameValue(ApiAuthPolicy::API_TOKEN, ApiAuthPolicy::forPath('/api/facturacion/comprobantes?token=abc'));
+    assertSameValue(ApiAuthPolicy::JWT, ApiAuthPolicy::forPath('/api/facturacion/empresas?x=1'));
+    assertSameValue(ApiAuthPolicy::JWT, ApiAuthPolicy::forPath('/api/facturacion/pos/productos?empresa_id=2'));
+});
+
 test('POST solo extrae token del JSON', function () {
     assertSameValue('body-token', ApiAuthPolicy::extractApiToken('POST', ['token' => 'query-token'], '{"token":"body-token"}'));
 });
