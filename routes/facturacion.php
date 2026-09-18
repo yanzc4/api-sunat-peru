@@ -110,6 +110,11 @@ Flight::route('POST /api/facturacion/empresas/@id/logo', function (string $id) {
     $controller->subirLogo($id);
 });
 
+Flight::route('GET /api/facturacion/empresas/@id/logo', function (string $id) {
+    $controller = new EmpresaController();
+    $controller->verLogo($id);
+});
+
 Flight::route('GET /api/facturacion/empresas/@id/series', function (string $id) {
     $controller = new EmpresaController();
     $controller->listarSeries($id);
@@ -127,6 +132,11 @@ Flight::route('POST /api/facturacion/empresas/@id/series', function (string $id)
 Flight::route('POST /api/facturacion/usuarios', function () {
     $controller = new UsuarioController();
     $controller->crear();
+});
+
+Flight::route('PUT /api/facturacion/usuarios/@id', function (string $id) {
+    $controller = new UsuarioController();
+    $controller->editar($id);
 });
 
 // =====================================================

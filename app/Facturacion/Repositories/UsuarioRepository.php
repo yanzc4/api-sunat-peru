@@ -91,6 +91,33 @@ class UsuarioRepository
         return (int) $this->pdo->lastInsertId();
     }
 
+    public function update(int $id, string $nombre, string $email, string $rol, ?string $passwordHash = null): bool
+    {
+        $fields = [
+            'nombre = :nombre',
+            'email = :email',
+            'rol = :rol',
+            'updated_at = NOW()',
+        ];
+        $params = [
+            ':id' => $id,
+            ':nombre' => $nombre,
+            ':email' => $email,
+            ':rol' => $rol,
+        ];
+
+        if ($passwordHash !== null) {
+            $fields[] = 'password = :password';
+            $params[':password'] = $passwordHash;
+        }
+
+        $stmt = $this->pdo->prepare(
+            'UPDATE usuarios SET ' . implode(', ', $fields) . ' WHERE id = :id'
+        );
+
+        return $stmt->execute($params);
+    }
+
     private function hydrate(array $row): Usuario
     {
         return new Usuario(

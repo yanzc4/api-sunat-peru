@@ -56,7 +56,7 @@ $cssVersion = is_file($cssPath) ? (string) filemtime($cssPath) : '1';
             <div class="border-b border-slate-200 px-5 py-4 dark:border-white/10"><h2 class="text-sm font-semibold">Directorio de usuarios</h2><p class="mt-1 text-xs text-slate-500 dark:text-slate-400">La tabla muestra 10 registros por página.</p></div>
             <div class="overflow-x-auto p-4 sm:p-5">
                 <table id="usuariosTable" class="display w-full" style="width:100%">
-                    <thead><tr><th>ID</th><th>Usuario</th><th>Correo</th><th>Rol</th><th>Empresa vinculada</th><th>Fecha de alta</th></tr></thead>
+                    <thead><tr><th>ID</th><th>Usuario</th><th>Correo</th><th>Rol</th><th>Empresa vinculada</th><th>Fecha de alta</th><th>Acciones</th></tr></thead>
                     <tbody>
                         <?php foreach ($usuarios as $item): ?>
                             <tr>
@@ -66,6 +66,7 @@ $cssVersion = is_file($cssPath) ? (string) filemtime($cssPath) : '1';
                                 <td><span class="role-badge <?= $item['rol'] === 'admin' ? 'role-admin' : 'role-client' ?>"><?= $e($item['rol']) ?></span></td>
                                 <td><?= $item['empresas'] ? '<span class="company-cell">' . $e($item['empresas']) . '</span>' : '' ?></td>
                                 <td data-order="<?= $e($item['created_at']) ?>"><?= $e(date('d/m/Y', strtotime((string) $item['created_at']))) ?></td>
+                                <td><button type="button" class="admin-icon-button" title="Editar usuario" aria-label="Editar a <?= $e($item['nombre']) ?>" data-edit-user='<?= $e(json_encode(['id' => (int) $item['id'], 'nombre' => $item['nombre'], 'email' => $item['email'], 'rol' => $item['rol']], JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP)) ?>'><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button></td>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>
@@ -89,17 +90,35 @@ $cssVersion = is_file($cssPath) ? (string) filemtime($cssPath) : '1';
         </div>
     </div>
 
+    <div id="modalEditarUsuario" class="app-modal" role="dialog" aria-modal="true" aria-labelledby="titulo-editar-usuario">
+        <div class="modal-panel max-w-lg">
+            <div class="modal-heading"><div><p class="modal-kicker">Administración de acceso</p><h2 id="titulo-editar-usuario" class="modal-title">Editar usuario</h2><p class="mt-2 text-sm text-slate-500 dark:text-slate-400">Deja la contraseña vacía para conservar la actual.</p></div><button type="button" data-close-modal class="modal-close">×</button></div>
+            <form id="formEditarUsuario" class="mt-6 space-y-4">
+                <input type="hidden" name="id">
+                <label><span class="field-label">Nombre completo</span><input class="field-input" name="nombre" autocomplete="name" required></label>
+                <label><span class="field-label">Correo electrónico</span><input class="field-input" type="email" name="email" autocomplete="email" required></label>
+                <label><span class="field-label">Nueva contraseña</span><input class="field-input" type="password" name="password" minlength="8" autocomplete="new-password" placeholder="Sin cambios"><small class="mt-1 block text-xs text-slate-500">Opcional · mínimo 8 caracteres.</small></label>
+                <label><span class="field-label">Rol</span><select class="field-input" name="rol"><option value="cliente">Cliente</option><option value="admin">Administrador</option></select></label>
+            </form>
+            <div id="resEditarUsuario" class="form-alert mt-4 hidden"></div>
+            <div class="modal-actions"><button type="button" data-close-modal class="admin-secondary-button">Cancelar</button><button type="button" id="actualizarUsuario" class="admin-primary-button">Guardar cambios</button></div>
+        </div>
+    </div>
+
     <script src="https://cdn.datatables.net/3.0.4/js/dataTables.js"></script>
     <script>
         const themeToggle=document.getElementById('theme-toggle');themeToggle.addEventListener('click',()=>{const dark=!document.documentElement.classList.contains('dark');document.documentElement.classList.toggle('dark',dark);localStorage.setItem('landing-theme',dark?'dark':'light')});
         function openModal(id){const modal=document.getElementById(id);if(!modal)return;modal.classList.add('flex');document.body.style.overflow='hidden';setTimeout(()=>modal.querySelector('input,button,select')?.focus(),20)}
         function closeModal(modal){modal.classList.remove('flex');document.body.style.overflow=''}
         document.querySelectorAll('[data-open-modal]').forEach(button=>button.addEventListener('click',()=>openModal(button.dataset.openModal)));document.querySelectorAll('[data-close-modal]').forEach(button=>button.addEventListener('click',()=>closeModal(button.closest('.app-modal'))));document.querySelectorAll('.app-modal').forEach(modal=>modal.addEventListener('mousedown',event=>{if(event.target===modal)closeModal(modal)}));document.addEventListener('keydown',event=>{if(event.key==='Escape')document.querySelectorAll('.app-modal.flex').forEach(closeModal)});
-        function setAlert(state,message){const element=document.getElementById('resUsuario');element.dataset.state=state;element.textContent=message;element.classList.remove('hidden')}
+        function setAlert(state,message,id='resUsuario'){const element=document.getElementById(id);element.dataset.state=state;element.textContent=message;element.classList.remove('hidden')}
         async function readJson(response){try{return await response.json()}catch(_){return{success:false,error:{message:'Respuesta no válida del servidor.'}}}}
         document.getElementById('guardarUsuario').addEventListener('click',async()=>{const form=document.getElementById('formCrearUsuario');if(!form.checkValidity()){form.reportValidity();return}setAlert('loading','Creando usuario…');try{const response=await fetch('/api/facturacion/usuarios',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(form)))}),json=await readJson(response);if(!response.ok||!json.success)throw new Error(json.error?.message||'No se pudo crear el usuario.');location.reload()}catch(error){setAlert('error',error.message)}});
 
-        if(window.DataTable){new DataTable('#usuariosTable',{pageLength:10,lengthChange:false,order:[[0,'desc']],layout:{topStart:'search',topEnd:null,bottomStart:'info',bottomEnd:'paging'},language:{search:'Buscar:',searchPlaceholder:'Nombre, correo o empresa…',info:'Mostrando _START_ a _END_ de _TOTAL_ usuarios',infoEmpty:'Sin usuarios',zeroRecords:'No se encontraron usuarios',emptyTable:'No hay usuarios registrados',paginate:{previous:'Anterior',next:'Siguiente'}}})}else{initFallbackTable()}
+        document.querySelectorAll('[data-edit-user]').forEach(button=>button.addEventListener('click',()=>{const data=JSON.parse(button.dataset.editUser),form=document.getElementById('formEditarUsuario');form.reset();form.elements.id.value=data.id;form.elements.nombre.value=data.nombre;form.elements.email.value=data.email;form.elements.rol.value=data.rol;document.getElementById('resEditarUsuario').classList.add('hidden');openModal('modalEditarUsuario')}));
+        document.getElementById('actualizarUsuario').addEventListener('click',async()=>{const form=document.getElementById('formEditarUsuario');if(!form.checkValidity()){form.reportValidity();return}const data=Object.fromEntries(new FormData(form)),id=data.id;delete data.id;if(!data.password)delete data.password;setAlert('loading','Guardando cambios…','resEditarUsuario');try{const response=await fetch(`/api/facturacion/usuarios/${id}`,{method:'PUT',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify(data)}),json=await readJson(response);if(!response.ok||!json.success)throw new Error(json.error?.message||'No se pudo actualizar el usuario.');location.reload()}catch(error){setAlert('error',error.message,'resEditarUsuario')}});
+
+        if(window.DataTable){new DataTable('#usuariosTable',{pageLength:10,lengthChange:false,order:[[0,'desc']],columnDefs:[{orderable:false,searchable:false,targets:6}],layout:{topStart:'search',topEnd:null,bottomStart:'info',bottomEnd:'paging'},language:{search:'Buscar:',searchPlaceholder:'Nombre, correo o empresa…',info:'Mostrando _START_ a _END_ de _TOTAL_ usuarios',infoEmpty:'Sin usuarios',zeroRecords:'No se encontraron usuarios',emptyTable:'No hay usuarios registrados',paginate:{previous:'Anterior',next:'Siguiente'}}})}else{initFallbackTable()}
         function initFallbackTable(){const rows=[...document.querySelectorAll('#usuariosTable tbody tr')],controls=document.getElementById('tableFallbackControls'),info=document.getElementById('fallbackInfo'),prev=document.getElementById('fallbackPrev'),next=document.getElementById('fallbackNext');let page=0;const pages=Math.max(1,Math.ceil(rows.length/10));controls.classList.remove('hidden');controls.classList.add('flex');const draw=()=>{rows.forEach((row,index)=>row.hidden=index<page*10||index>=(page+1)*10);info.textContent=`Página ${page+1} de ${pages}`;prev.disabled=page===0;next.disabled=page>=pages-1};prev.addEventListener('click',()=>{if(page>0){page--;draw()}});next.addEventListener('click',()=>{if(page<pages-1){page++;draw()}});draw()}
     </script>
 </body>

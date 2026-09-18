@@ -225,10 +225,6 @@ class EmpresaController
                 SunatEnvironment::assertSupported($campos['entorno']);
             }
 
-            if (isset($data['logo_path'])) {
-                $campos['logo_path'] = $data['logo_path'];
-            }
-
             if (array_key_exists('activo', $data)) {
                 $this->requireAdmin();
                 $campos['activo'] = filter_var($data['activo'], FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
@@ -379,6 +375,55 @@ class EmpresaController
             ResponseHelper::validationError($e->getMessage());
         } catch (\Throwable $e) {
             ResponseHelper::internalException($e, 'Error al subir logo');
+        }
+    }
+
+    public function verLogo(string $id): void
+    {
+        try {
+            $empresa = $this->repo->findById((int) $id);
+            if (!$empresa) {
+                ResponseHelper::notFound('Empresa no encontrada');
+            }
+            $this->checkOwner($empresa);
+
+            if (!$empresa->logoPath) {
+                ResponseHelper::notFound('La empresa no tiene un logo registrado');
+            }
+
+            $extension = strtolower(pathinfo($empresa->logoPath, PATHINFO_EXTENSION));
+            $contentTypes = [
+                'jpg' => 'image/jpeg',
+                'jpeg' => 'image/jpeg',
+                'png' => 'image/png',
+                'svg' => 'image/svg+xml',
+            ];
+            if (!isset($contentTypes[$extension])) {
+                ResponseHelper::notFound('Logo no disponible');
+            }
+
+            $config = FacturacionConfig::getInstance();
+            $basePermitida = realpath($config->getProjectRoot() . '/storage/public/empresas/' . $empresa->ruc);
+            $archivo = realpath($config->resolveProjectPath($empresa->logoPath));
+            if ($basePermitida === false || $archivo === false || !is_file($archivo)) {
+                ResponseHelper::notFound('Logo no disponible');
+            }
+
+            $baseNormalizada = strtolower(str_replace('\\', '/', rtrim($basePermitida, '\\/'))) . '/';
+            $archivoNormalizado = strtolower(str_replace('\\', '/', $archivo));
+            if (!str_starts_with($archivoNormalizado, $baseNormalizada)) {
+                ResponseHelper::notFound('Logo no disponible');
+            }
+
+            header('Content-Type: ' . $contentTypes[$extension]);
+            header('Content-Length: ' . (string) filesize($archivo));
+            header('Content-Disposition: inline; filename="logo.' . $extension . '"');
+            header('Cache-Control: private, max-age=300');
+            header('X-Content-Type-Options: nosniff');
+            readfile($archivo);
+            exit;
+        } catch (\Throwable $e) {
+            ResponseHelper::internalException($e, 'Error al mostrar logo');
         }
     }
 

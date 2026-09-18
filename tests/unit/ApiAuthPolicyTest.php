@@ -32,6 +32,11 @@ test('Empresas exige JWT y no token API', function () {
     assertSameValue(ApiAuthPolicy::JWT, ApiAuthPolicy::forPath('/api/facturacion/empresas/2/logo'));
 });
 
+test('Usuarios internos exigen JWT', function () {
+    assertSameValue(ApiAuthPolicy::JWT, ApiAuthPolicy::forPath('/api/facturacion/usuarios'));
+    assertSameValue(ApiAuthPolicy::JWT, ApiAuthPolicy::forPath('/api/facturacion/usuarios/2'));
+});
+
 test('Productos y POS internos exigen JWT', function () {
     foreach ([
         '/api/facturacion/productos',
